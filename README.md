@@ -1,26 +1,77 @@
-# Controller-HA-for-AWS
+## Aviatrix - AWS Quickstart script for CloudFormation
 
-Prerequisites
-1. Launch Aviatrix AWS controller using this startup guide. Make sure instance has a 'Name' tag with value as 'AviatrixController'
-2. Creating multiple subnets on the VPC where AWS controller is launched. This is for HA over different Availability zones. You can skip this step, if you want to achieve HA over a single AZ only.
-3. Create a new 
+### Description
+This CloudFormation script will create the following:
 
-Procedure:
+* One Aviatrix Controller EC2 Instance (named AviatrixController).
+* One Aviatrix Security Group (named AviatrixSecurityGroup).
+* One Aviatrix Role for EC2 (named aviatrix-role-ec2) with corresponding role policy (named aviatrix-assume-role-policy). [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/iam_assume_role_policy.txt)
+* One Aviatrix Role for Apps (named aviatrix-role-app) with corresponding role policy (named aviatrix-app-policy) [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/IAM_access_policy_for_CloudN.txt)
 
-Create lambda function:
-1. Go to lambda console https://console.aws.amazon.com/lambda/home.
-2. Click on Create function. Click on Author from scratch. 
-3. Click on faded square, and select CloudWatch Events. Click on Rule dropdown box, and select new Rule. 
-Add a Rule name(eg. controller_backup). In Schedule expression, add 'rate(1 day)' without colons.  Click Next.
-3. Add a function name(eg. controller_ha). Change Runtime to Python 2.7. In Lambda function code section paste the content from file controller_ha.py.
-4. Add an environment variable with key as SUBNET_LIST and value as a comma separated list of subnets created in the beginning.
-5. In Lambda function handler and role-> Role, from dropdown menu, select 'Create a custom role', A new tab window will open. In IAM Role dropdown menu, click on 'Create a new IAM Role'. Give a Role Name(eg. controller_backup_lambda). Click on View Policy Document and Edit. Paste the content from aviatrix-lambda-policy. Click on Allow.
-Create SNS topic and subscribe lambda function to this topic:
-6. Click on Next. Click on Create function.
-7. Go to SNS console. Click on 'Create new topic'. Enter topic name as AviatrixController. Click on Create Topic.
-Click on ARN link next to AviatrixController topic. Click on Create subscription. Choose Protocol as AWS Lambda. 
-8. Click on Endpoint and select ARN with lambda function created in last step. Click Create subscription.
+> Quickstart lite:
+>
+If you only need to create the roles and policies, and plan to manually start the Aviatrix controller instance, use the Quickstart lite version. For lite version instructions click [here](./README-lite.md)
 
-Attach controller instance to autoscaling group:
-9. Go to EC2 console. Select AviatrixController instance. Click on Actions->Instance Settings->Attach to Auto Scaling Group. Select 'a new Auto Scaling group' Enter Auto Scaling Group Name as 'AviatrixController'.
-10. From the left side menu in EC2 console, expand AUTO SCALING, and click on Auto Scaling Groups. Select AviatrixController, and click on Notifications tab. Click on Send a notification to, and from drop down menu, select AviatrixController. In Whenever instances, make sure only launch is checked. Click on Save.
+### Pre-requisites:
+
+* An existing VPC.
+* A public subnet on that VPC.
+* An internet gateway attached to the VPC.
+* An Elastic IP with VPC scope
+* A keyPair.
+* In order to use the Aviatrix Controller first you need to accept the terms and subscribe to it in the AWS Marketplace.  Click [here](https://aws.amazon.com/marketplace/pp?sku=zemc6exdso42eps9ki88l9za)
+
+> Note: this script does **NOT** check that the subnet selected is on the same VPC selected, you need to make sure you are selecting the right combination.
+
+> Note 2: this script does **NOT** check that an Internet Gateway is created and attached to the VPC. If this is missing there will be no way to access the Aviatrix Controller.
+
+### Step by step Procedure:
+
+1. Download aviatrix_ha.py. Zip it with name aviatrix_ha.zip. Create an S3 bucket named aviatrix-lambda and  aviatrix_ha.zip there.
+
+2. Access your AWS Console.
+
+3. Under Services -> Management Tools.
+```
+ Select CloudFormation.
+ ```
+ OR
+```
+ Search for CloudFormation.
+```
+
+4. At the CloudFormation page, Select Create stack.
+
+5. On the next screen, Select "Upload a template to Amazon S3".
+```
+  Choose file -> aviatrix-aws-quickstart.json
+```
+
+  > Note: the [aviatrix-aws-quickstart.json file](https://github.com/AviatrixSystems/AWSQuickStart/blob/master/aviatrix-aws-quickstart.json) can be found in this project, click [here](https://raw.githubusercontent.com/AviatrixSystems/AWSQuickStart/master/aviatrix-aws-quickstart.json)   for direct download.
+
+6. Click next.
+
+7. On the Stack Name textbox, Name your Stack -> Something like *AviatrixController*
+
+8. Select the following parameters:
+
+  * VPC
+  * Subnet
+  * KeyPair Name
+
+9. Click next
+
+10. Especify your options/tags/permissions as per your policies, when in doubt just click next.
+
+11. On the review page, scroll to the bottom and check the button that reads:
+*I acknowledge that AWS CloudFormation might create IAM resources with custom names.*
+
+12. Click on Create.
+
+13. Verify that the instance, roles and policies has been created and associated accordingly.
+
+14. Enjoy! You are welcomed!
+
+### Caveats:
+
+* There is no current automated way to check if the VPC/Subnet/IGW/Elastic IP are all in place and correctly configured. Manual creation of those elements is required.
