@@ -70,7 +70,7 @@
   },
   "Resources" :
   {
-    "AviatrixLambdaRole" :
+    "AviatrixRoleLambda" :
     {
       "Type": "AWS::IAM::Role",
       "Properties" :
@@ -108,22 +108,21 @@
                 },
                 {
                     "Effect": "Allow",
-                    "Action": "ec2:*",
-                    "Resource": "*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": "autoscaling:*",
-                    "Resource": "*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": "sns:*",
-                    "Resource": "*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": "lambda:*",
+                    "Action": [
+                        "ec2:DescribeInstances",
+                        "ec2:DescribeAddresses",
+                        "ec2:AssociateAddress",
+                        "ec2:DescribeImages",
+                        "ec2:DeregisterImage",
+                        "ec2:DescribeSnapshots",
+                        "ec2:DeleteSnapshot",
+                        "ec2:CreateImage",
+                        "lambda:UpdateFunctionConfiguration",
+                        "autoscaling:CreateLaunchConfiguration",
+                        "autoscaling:DescribeAutoScalingGroups",
+                        "autoscaling:UpdateAutoScalingGroup",
+                        "autoscaling:DeleteLaunchConfiguration"
+                    ],
                     "Resource": "*"
                 }
             ]
@@ -471,7 +470,7 @@
           },
           "FunctionName" : "enable_ha",
           "Handler" : "aviatrix_ha.lambda_handler",
-          "Role" : {"Fn::GetAtt": [ "AviatrixLambdaRole", "Arn" ]},
+          "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
           "Runtime" : "python2.7",
           "Timeout" : "60",
        }

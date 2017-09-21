@@ -6,8 +6,8 @@ This CloudFormation script will create the following:
 * One Aviatrix Controller EC2 Instance (named AviatrixController).
 * One Aviatrix Security Group (named AviatrixSecurityGroup).
 * One Aviatrix Role for EC2 (named aviatrix-role-ec2) with corresponding role policy (named aviatrix-assume-role-policy). [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/iam_assume_role_policy.txt)
-* One Aviatrix Role for Apps (named aviatrix-role-app) with corresponding role policy (named aviatrix-app-policy) [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/IAM_access_policy_for_CloudN.txt)
-* One Aviatrix Role for Apps (named aviatrix-lambda-role)
+* One Aviatrix Role for Lambda function (named aviatrix-role-app) with corresponding role policy (named aviatrix-app-policy) [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/IAM_access_policy_for_CloudN.txt)
+* One Aviatrix Role for Lambda (named aviatrix-lambda-role)
 > Quickstart lite:
 >
 If you only need to create the roles and policies, and plan to manually start the Aviatrix controller instance, use the Quickstart lite version. For lite version instructions click [here](./README-lite.md)
