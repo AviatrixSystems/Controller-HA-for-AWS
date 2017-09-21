@@ -47,7 +47,7 @@ If you only need to create the roles and policies, and plan to manually start th
   Choose file -> aviatrix-aws-quickstart.json
 ```
 
-  > Note: the [aviatrix-aws-quickstart.json file](https://github.com/AviatrixSystems/Controller-HA-for-AWS/blob/master/aviatrix-aws-quickstart.json) can be found in this project, click [here](https://raw.githubusercontent.com/AviatrixSystems/Controller-HA-for-AWS/master/aviatrix-aws-quickstart.json)   for direct download.
+  > Note: the [aviatrix-aws-quickstart.json file](https://github.com/AviatrixSystems/Controller-HA-for-AWS/blob/master/aviatrix-aws-quickstart-with-ha.json) can be found in this project, click [here](https://raw.githubusercontent.com/AviatrixSystems/Controller-HA-for-AWS/master/aviatrix-aws-quickstart-with-ha.json)   for direct download.
 
 6. Click next.
 
