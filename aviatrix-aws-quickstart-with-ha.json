@@ -478,7 +478,7 @@
     "AviatrixLambdaScheduleRule": {
       "Type": "AWS::Events::Rule",
       "Properties": {
-        "ScheduleExpression": "rate(1 day)",
+        "ScheduleExpression": "rate(12 hours)",
         "Targets": [
           {
             "Id": "AviatrixLambdaScheduler",

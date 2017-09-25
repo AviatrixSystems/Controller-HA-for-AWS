@@ -27,11 +27,15 @@ If you only need to create the roles and policies, and plan to manually start th
 
 ### Step by step Procedure:
 
-1. Download aviatrix_ha.py. Zip it with name aviatrix_ha.zip. Create an S3 bucket named aviatrix-lambda and  upload aviatrix_ha.zip there. (Upload this zip file on our S3, so that customers can directly download and upload on their S3??)
+1. Download this repository as zip file, by clicking on top left green button named `Clone or download`, and then click on `Download ZIP`. 
 
-2. Access your AWS Console.
+2. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Go to that directory and zip file `aviatrix_ha.py` with name aviatrix_ha.zip.
 
-3. Under Services -> Management Tools.
+3. Now create an S3 bucket named `aviatrix-lambda` from AWS console, and upload `aviatrix_ha.zip` there.
+
+4. Access your AWS Console.
+
+5. Under Services -> Management Tools.
 ```
  Select CloudFormation.
  ```
@@ -40,38 +44,33 @@ If you only need to create the roles and policies, and plan to manually start th
  Search for CloudFormation.
 ```
 
-4. At the CloudFormation page, Select Create stack.
+6. At the CloudFormation page, Select Create stack.
 
-5. On the next screen, Select "Upload a template to Amazon S3".
-```
-  Choose file -> aviatrix-aws-quickstart.json
-```
+7. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-quickstart-with-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
 
-  > Note: the [aviatrix-aws-quickstart.json file](https://github.com/AviatrixSystems/Controller-HA-for-AWS/blob/master/aviatrix-aws-quickstart-with-ha.json) can be found in this project, click [here](https://raw.githubusercontent.com/AviatrixSystems/Controller-HA-for-AWS/master/aviatrix-aws-quickstart-with-ha.json)   for direct download.
+8. Click next.
 
-6. Click next.
+9. On the Stack Name textbox, Name your Stack -> Something like *AviatrixController*
 
-7. On the Stack Name textbox, Name your Stack -> Something like *AviatrixController*
-
-8. Select the following parameters:
+10. Select the following parameters:
 
   * VPC
   * Subnet
   * KeyPair Name
   * Elastic IP
 
-9. Click next
+11. Click next
 
-10. Especify your options/tags/permissions as per your policies, when in doubt just click next.
+12. Especify your options/tags/permissions as per your policies, when in doubt just click next.
 
-11. On the review page, scroll to the bottom and check the button that reads:
+13. On the review page, scroll to the bottom and check the button that reads:
 *I acknowledge that AWS CloudFormation might create IAM resources with custom names.*
 
-12. Click on Create.
+14. Click on Create.
 
-13. Verify that the instance, roles and policies has been created and associated accordingly.
+15. Verify that the instance, roles and policies has been created and associated accordingly.
 
-14. Enjoy! You are welcomed!
+16. Enjoy! You are welcomed!
 
 ### Caveats:
 
