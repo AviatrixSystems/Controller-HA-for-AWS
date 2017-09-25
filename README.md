@@ -8,9 +8,6 @@ This CloudFormation script will create the following:
 * One Aviatrix Role for EC2 (named aviatrix-role-ec2) with corresponding role policy (named aviatrix-assume-role-policy). [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/iam_assume_role_policy.txt)
 * One Aviatrix Role for Lambda function (named aviatrix-role-app) with corresponding role policy (named aviatrix-app-policy) [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/IAM_access_policy_for_CloudN.txt)
 * One Aviatrix Role for Lambda (named aviatrix-role-lambda) with corresponding role policy (named AviatrixLambdaRolePolicy).
-> Quickstart lite:
->
-If you only need to create the roles and policies, and plan to manually start the Aviatrix controller instance, use the Quickstart lite version. For lite version instructions click [here](./README-lite.md)
 
 ### Pre-requisites:
 
@@ -24,6 +21,8 @@ If you only need to create the roles and policies, and plan to manually start th
 > Note: this script does **NOT** check that the subnet selected is on the same VPC selected, you need to make sure you are selecting the right combination.
 
 > Note 2: this script does **NOT** check that an Internet Gateway is created and attached to the VPC. If this is missing there will be no way to access the Aviatrix Controller.
+
+> Note 2: this script does NOT check whether provided Elastic IP is available or not.
 
 ### Step by step Procedure:
 
