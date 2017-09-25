@@ -75,7 +75,7 @@
       "Type": "AWS::IAM::Role",
       "Properties" :
       {
-        "RoleName": "aviatrix-lambda-role",
+        "RoleName": "aviatrix-role-lambda",
         "AssumeRolePolicyDocument":
         {
           "Version" : "2012-10-17",
