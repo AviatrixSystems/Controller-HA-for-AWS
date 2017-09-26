@@ -1,4 +1,4 @@
-## Aviatrix - AWS Quickstart script for CloudFormation
+## Aviatrix - AWS CloudFormation template for HA on existing Aviatrix controller.
 
 ### Description
 This CloudFormation script will create the following:
