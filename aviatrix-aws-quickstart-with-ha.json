@@ -13,15 +13,16 @@
         },
         {
           "Label" : { "default":"Amazon EC2 Configuration" },
-          "Parameters" : [ "KeyNameParam", "ElasticIpParam" ]
+          "Parameters" : [ "KeyNameParam", "ElasticIpParam", "S3BucketParam" ]
         }
       ],
       "ParameterLabels" :
       {
          "VPCParam" : { "default" : "Which VPC should the Aviatrix Controller be deployed to?" },
-         "SubnetParam" : { "default" : "Which subnet within that VPC?" },
+         "SubnetParam" : { "default" : "Enter subnets in different Availability zones within that VPC" },
          "KeyNameParam" : { "default" : "Which keypair will be used?" },
-         "ElasticIpParam" : { "default" : "Which Elastic IP will be used(for example 1.1.1.1)?" }
+         "ElasticIpParam" : { "default" : "Which Elastic IP will be used(for example 1.1.1.1)?" },
+         "S3BucketParam": { "default" : "Enter S3 Bucket name which has aviatrix_ha.zip file." }
       }
     }
   },
@@ -46,6 +47,11 @@
       {
         "Type": "String",
         "Description": "Enter your Elastic IP with VPC scope(for eg. 1.1.1.1)"
+      },
+      "S3BucketParam":
+      {
+        "Type": "String",
+        "Description": "Enter S3 Bucket name which has aviatrix_ha.zip file."
       }
   },
   "Mappings" :
@@ -462,7 +468,7 @@
     "AviatrixLambda" : {
        "Type" : "AWS::Lambda::Function",
        "Properties" : {
-          "Code" : {"S3Bucket" : "aviatrix-lambda", "S3Key" : "aviatrix_ha.zip"},
+          "Code" : {"S3Bucket" : { "Ref" : "S3BucketParam" }, "S3Key" : "aviatrix_ha.zip"},
           "Environment" : {
             "Variables": { 
               "EIP" : { "Ref" : "ElasticIpParam" }

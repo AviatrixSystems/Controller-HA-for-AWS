@@ -3,7 +3,9 @@
 ### Description
 This CloudFormation script will create the following:
 
-* One Aviatrix Controller EC2 Instance (named AviatrixController).
+* An Aviatrix Autoscaling group with size 1, launching an EC2 Instance (named AviatrixController).
+* An SNS topic named `AviatrixController`.
+* An autoscaling group named `AviatrixController`.
 * One Aviatrix Security Group (named AviatrixSecurityGroup).
 * One Aviatrix Role for EC2 (named aviatrix-role-ec2) with corresponding role policy (named aviatrix-assume-role-policy). [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/iam_assume_role_policy.txt)
 * One Aviatrix Role for Lambda function (named aviatrix-role-app) with corresponding role policy (named aviatrix-app-policy) [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/IAM_access_policy_for_CloudN.txt)
@@ -12,10 +14,11 @@ This CloudFormation script will create the following:
 ### Pre-requisites:
 
 * An existing VPC.
-* One or more public subnets on that VPC(These subnets will be used by AutoScaling Group to launch new controller instance).
+* One or more public subnets on different Availability Zones on that VPC(These subnets will be used by AutoScaling Group to launch new controller instance, so make sure they are on different AZs to achieve HA across AZs.).
 * An internet gateway attached to the VPC.
 * A keyPair.
-* An Elastic IP with VPC scope
+* An Elastic IP with VPC scope.
+* Create an S3 bucket, and note its name down.
 * In order to use the Aviatrix Controller first you need to accept the terms and subscribe to it in the AWS Marketplace.  Click [here](https://aws.amazon.com/marketplace/pp?sku=zemc6exdso42eps9ki88l9za)
 
 > Note: this script does **NOT** check that the subnet selected is on the same VPC selected, you need to make sure you are selecting the right combination.
@@ -30,7 +33,7 @@ This CloudFormation script will create the following:
 
 2. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Go to that directory and zip file `aviatrix_ha.py` with name aviatrix_ha.zip.
 
-3. Now create an S3 bucket named `aviatrix-lambda` from AWS console, and upload `aviatrix_ha.zip` there.
+3. Now upload `aviatrix_ha.zip` to S3 bucket created in prerequisite steps.
 
 4. Access your AWS Console.
 
@@ -57,10 +60,11 @@ This CloudFormation script will create the following:
   * Subnet
   * KeyPair Name
   * Elastic IP
+  * S3 Bucket(enter name of S3 bucket created in prerequisite steps)
 
 11. Click next
 
-12. Especify your options/tags/permissions as per your policies, when in doubt just click next.
+12. Specify your options/tags/permissions as per your policies, when in doubt just click next.
 
 13. On the review page, scroll to the bottom and check the button that reads:
 *I acknowledge that AWS CloudFormation might create IAM resources with custom names.*

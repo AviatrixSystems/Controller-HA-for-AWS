@@ -45,7 +45,7 @@ def lambda_handler(event, context):
         if event['RequestType'] == 'Create':
             lambda_client = boto3.client('lambda')
             lambda_client.update_function_configuration(FunctionName=context.function_name,
-                                                    Environment={'Variables': {'EIP': os.environ['EIP'], 
+                                                    Environment={'Variables': {'EIP': os.environ.get('EIP'),
                                                     'ASG_NAME': event['ResourceProperties'].get("ASG_NAME")
                                                     }})
             assign_eip(client, controller_instanceobj)
@@ -56,7 +56,7 @@ def lambda_handler(event, context):
         assign_eip(client, controller_instanceobj)
 
 def assign_eip(client, controller_instanceobj):
-    EIP = os.environ['EIP']
+    EIP = os.environ.get('EIP')
     eip_alloc_id = client.describe_addresses(PublicIps=[EIP]).get('Addresses')[0].get('AllocationId')
     client.associate_address(AllocationId=eip_alloc_id,
                                      InstanceId=controller_instanceobj['InstanceId'])
@@ -88,7 +88,8 @@ def register_new_image(client, controller_instanceobj, context):
         lambda_client = boto3.client('lambda')
         lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                     Environment={'Variables': {'EIP': EIP, 
-                                                    'ASG_NAME': os.environ['ASG_NAME']
+                                                    'ASG_NAME': os.environ.get('ASG_NAME'),
+                                                    'SUBNETLIST': os.environ.get('SUBNETLIST')
                                                     }})
     image = client.create_image(
         InstanceId=controller_instanceobj['InstanceId'],
@@ -100,7 +101,7 @@ def register_new_image(client, controller_instanceobj, context):
     return image['ImageId']
 
 def update_autoscaling_conf(new_ami, controller_instanceobj, context):
-    ASG_NAME = os.environ['ASG_NAME']
+    ASG_NAME = os.environ.get('ASG_NAME')
     asg_client = boto3.client('autoscaling')
     timeStamp = time.time()
     timeStampString = datetime.datetime.fromtimestamp(timeStamp).strftime('%Y-%m-%d  %H-%M-%S')
@@ -110,6 +111,10 @@ def update_autoscaling_conf(new_ami, controller_instanceobj, context):
             LaunchConfigurationName=newLaunchConfigName,
             ImageId= new_ami)
     asg = asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[ASG_NAME]).get('AutoScalingGroups')
+    if not asg:
+        create_autoscaling_conf(asg_client, controller_instanceobj, newLaunchConfigName, context)
+        return
+
     old_lc = asg[0]['LaunchConfigurationName']
     print(old_lc)
     response = asg_client.update_auto_scaling_group(AutoScalingGroupName = ASG_NAME,
@@ -117,6 +122,30 @@ def update_autoscaling_conf(new_ami, controller_instanceobj, context):
     #Delete old launch configuration
     asg_client.delete_launch_configuration(LaunchConfigurationName=old_lc)
     print('Updated Autoscaling Launch configuration')
+
+def create_autoscaling_conf(asg_client, controller_instanceobj, newLaunchConfigName, context):
+    ASG_NAME = os.environ.get('ASG_NAME')
+    asg_client.create_auto_scaling_group(AutoScalingGroupName = ASG_NAME,
+        LaunchConfigurationName=newLaunchConfigName,
+        MinSize=0,
+        MaxSize=1,
+        VPCZoneIdentifier=os.environ.get('SUBNETLIST'),
+        Tags=[{'Key': 'Name','Value': ASG_NAME, 'PropagateAtLaunch': True}]
+    )
+    print('Created ASG')
+    asg_client.attach_instances(InstanceIds=[controller_instanceobj['InstanceId']], AutoScalingGroupName=ASG_NAME)
+    sns_client = boto3.client('sns')
+    sns_topic_arn = sns_client.create_topic(Name=SNS_TOPIC).get('TopicArn')
+    lambda_client = boto3.client('lambda')
+    lambda_fn_arn = lambda_client.get_function(FunctionName=context.function_name).get('Configuration').get('FunctionArn')
+    sns_client.subscribe(TopicArn=sns_topic_arn,Protocol='lambda',Endpoint=lambda_fn_arn).get('SubscriptionArn')
+    response = lambda_client.add_permission(FunctionName=context.function_name, StatementId=str(uuid.uuid4()),
+                                    Action='lambda:InvokeFunction',
+                                    Principal='sns.amazonaws.com',SourceArn=sns_topic_arn)
+    response = asg_client.put_notification_configuration(AutoScalingGroupName=ASG_NAME,
+                    NotificationTypes=['autoscaling:EC2_INSTANCE_LAUNCH'],
+                    TopicARN=sns_topic_arn)
+    print('Attached ASG')
 
 def sendResponse(event, context, response_status, reason=None, response_data=None, physical_resource_id=None):
     response_data = response_data or {}
