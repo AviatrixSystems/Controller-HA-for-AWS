@@ -12,15 +12,24 @@
           "Parameters" : [ "VPCParam", "SubnetParam" ]
         },
         {
-          "Label" : { "default":"Amazon EC2 Configuration" },
+          "Label" : { "default":"Lambda function Configuration" },
           "Parameters" : [ "S3BucketParam" ]
+        },
+        {
+          "Label" : { "default":"Aviatrix Controller Backup Configuration" },
+          "Parameters" : [ "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "AviatrixUserParam", "AviatrixPassParam" ]
         }
       ],
       "ParameterLabels" :
       {
          "VPCParam" : { "default" : "Enter VPC of existing controller instance." },
          "SubnetParam" : { "default" : "Enter subnets in different Availability zones within that VPC." },
-         "S3BucketParam": { "default" : "Enter S3 Bucket name which has aviatrix_ha.zip file." }
+         "S3BucketParam": { "default" : "Enter S3 Bucket name which has aviatrix_ha.zip file." },
+         "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
+         "AwsAccessKeyParam": { "default" : "Enter AWS Access Key with permission to access S3 bucket." },
+         "AwsSecretKeyParam": { "default" : "Enter AWS Secret Key with permission to access S3 bucket." },
+         "AviatrixUserParam": { "default" : "Enter Aviatrix Cloud account username used for backup." },
+         "AviatrixPassParam": { "default" : "Enter Aviatrix Cloud account password used for backup." }
       }
     }
   },
@@ -40,6 +49,32 @@
       {
         "Type": "String",
         "Description": "Enter S3 Bucket name which has aviatrix_ha.zip file."
+      },
+      "S3BucketBackupParam":
+      {
+        "Type": "String",
+        "Description": "Enter S3 Bucket which will be used to store backup files."
+      },
+      "AwsAccessKeyParam":
+      {
+        "Type": "String",
+        "Description": "Enter AWS Access Key with permission to access S3 bucket."
+      },
+      "AwsSecretKeyParam":
+      {
+        "Type": "String",
+        "Description": "Enter AWS Secret Key with permission to access S3 bucket."
+      },
+      "AviatrixUserParam":
+      {
+        "Type": "String",
+        "Description": "Enter Aviatrix Cloud account username used for backup."
+      },
+      "AviatrixPassParam":
+      {
+        "Type": "String",
+        "Description": "Enter Aviatrix Cloud account password used for backup.",
+        "NoEcho": true
       }
   },
   "Resources" :
@@ -121,7 +156,12 @@
           "Environment" : {
             "Variables": { 
               "ASG_NAME" : "AviatrixController",
-              "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]}
+              "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
+              "S3_BUCKET_PARAM" : { "Ref" : "S3BucketBackupParam" },
+              "AWS_ACCESS_KEY_BACK" : { "Ref" : "AwsAccessKeyParam" },
+              "AWS_SECRET_KEY_BACK" : { "Ref" : "AwsSecretKeyParam" },
+              "AVIATRIX_USER_BACK" : { "Ref" : "AviatrixUserParam" },
+              "AVIATRIX_PASS_BACK" : { "Ref" : "AviatrixPassParam" }
             }
           },
           "FunctionName" : "enable_ha",
@@ -131,36 +171,12 @@
           "Timeout" : "60",
        }
     },
-    "AviatrixLambdaScheduleRule": {
-      "Type": "AWS::Events::Rule",
+    "SetupHA": {
+      "Type": "Custom::SetupHA",
       "Properties": {
-        "ScheduleExpression": "rate(12 hours)",
-        "Targets": [
-          {
-            "Id": "AviatrixLambdaScheduler",
-            "Arn": {
-              "Fn::GetAtt": [
-                "AviatrixLambda",
-                "Arn"
-              ]
-            }
-          }
-        ]
+        "ServiceToken": { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] }
       }
-    },
-    "InvokeLambdaPermission": {
-      "Type": "AWS::Lambda::Permission",
-      "Properties": {
-        "FunctionName": {
-          "Fn::GetAtt": [ "AviatrixLambda", "Arn" ]
-        },
-        "Action": "lambda:InvokeFunction",
-        "Principal": "events.amazonaws.com",
-        "SourceArn": {
-          "Fn::GetAtt": [ "AviatrixLambdaScheduleRule", "Arn" ]
-        }
-      }
-    },
+    }
   },
   "Outputs" :
   {
