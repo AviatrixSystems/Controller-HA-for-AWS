@@ -5,11 +5,8 @@ This CloudFormation script will create the following:
 
 * An Aviatrix Autoscaling group with size 1, launching an EC2 Instance (named AviatrixController).
 * An SNS topic named `AviatrixController`.
+* A lambda function named `enable_ha`.
 * An autoscaling group named `AviatrixController`.
-* One Aviatrix Security Group (named AviatrixSecurityGroup).
-* One Aviatrix Role for EC2 (named aviatrix-role-ec2) with corresponding role policy (named aviatrix-assume-role-policy). [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/iam_assume_role_policy.txt)
-* One Aviatrix Role for Lambda function (named aviatrix-role-app) with corresponding role policy (named aviatrix-app-policy) [Click here for this policy details](https://s3-us-west-2.amazonaws.com/aviatrix-download/IAM_access_policy_for_CloudN.txt)
-* One Aviatrix Role for Lambda (named aviatrix-role-lambda) with corresponding role policy (named AviatrixLambdaRolePolicy).
 
 ### Pre-requisites:
 
@@ -29,15 +26,23 @@ This CloudFormation script will create the following:
 
 ### Step by step Procedure:
 
-1. Download this repository as zip file, by clicking on top left green button named `Clone or download`, and then click on `Download ZIP`. 
+1. Launch a controller using instructions available at https://github.com/AviatrixSystems/AWSQuickStart
 
-2. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Go to that directory and zip file `aviatrix_ha.py` with name aviatrix_ha.zip.
+2. Now login to controller, and create a new account of any name(for eg. backup) for backup purpose. Note account name and password down.
 
-3. Now upload `aviatrix_ha.zip` to S3 bucket created in prerequisite steps.
+3. Create a new S3 bucket for backup. Go to Settings->Maintenance->Backup & Restore, and enable backup with account name created in previous step.
 
-4. Access your AWS Console.
+4. Go to AWS console, and select controller instance. Click Actions-> Image-> Create Image. Input Image name as `AviatrixController`. Leave other options to their default, and click `Create Image`. This newly created image will act as base image for all configuration restoration from now on.
 
-5. Under Services -> Management Tools.
+5. Once `AviatrixController` image is created, download this repository as zip file, by clicking on top left green button named `Clone or download`, and then click on `Download ZIP`.
+
+6. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Inside this directory, there will be a zipped file named `aviatrix_ha.zip`.
+
+7. Upload `aviatrix_ha.zip` to S3 bucket created in prerequisite steps.
+
+8. Access your AWS Console.
+
+9. Under Services -> Management Tools.
 ```
  Select CloudFormation.
  ```
@@ -46,34 +51,26 @@ This CloudFormation script will create the following:
  Search for CloudFormation.
 ```
 
-6. At the CloudFormation page, Select Create stack.
+10. At the CloudFormation page, Select Create stack.
 
-7. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-quickstart-with-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
+11. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
 
-8. Click next.
+12. Click next.
 
-9. On the Stack Name textbox, Name your Stack -> Something like *AviatrixController*
+13. On the Stack Name textbox, Name your Stack -> Something like *AviatrixHa*
 
-10. Select the following parameters:
+14. Enter the parameters as per description. Click next.
 
-  * VPC
-  * Subnet
-  * KeyPair Name
-  * Elastic IP
-  * S3 Bucket(enter name of S3 bucket created in prerequisite steps)
+15. Specify your options/tags/permissions as per your policies, when in doubt just click next.
 
-11. Click next
-
-12. Specify your options/tags/permissions as per your policies, when in doubt just click next.
-
-13. On the review page, scroll to the bottom and check the button that reads:
+16. On the review page, scroll to the bottom and check the button that reads:
 *I acknowledge that AWS CloudFormation might create IAM resources with custom names.*
 
-14. Click on Create.
+17. Click on Create.
 
-15. Verify that the instance, roles and policies has been created and associated accordingly.
+18. Wait for status to change to `CREATE_COMPLETE`. If fails, debug or contact Riverbed support.
 
-16. Enjoy! You are welcomed!
+19. Enjoy! You are welcome!
 
 ### Caveats:
 
