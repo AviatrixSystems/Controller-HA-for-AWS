@@ -7,51 +7,29 @@ This CloudFormation script will create the following:
 * An SNS topic named `AviatrixController`.
 * A lambda function named `enable_ha`.
 * An autoscaling group named `AviatrixController`.
-
-### Pre-requisites:
-
-* An existing VPC.
-* One or more public subnets on different Availability Zones on that VPC(These subnets will be used by AutoScaling Group to launch new controller instance, so make sure they are on different AZs to achieve HA across AZs.).
-* An internet gateway attached to the VPC.
-* A keyPair.
-* An Elastic IP with VPC scope.
-* Create an S3 bucket, and note its name down.
-* In order to use the Aviatrix Controller first you need to accept the terms and subscribe to it in the AWS Marketplace.  Click [here](https://aws.amazon.com/marketplace/pp?sku=zemc6exdso42eps9ki88l9za)
-
-> Note: this script does **NOT** check that the subnet selected is on the same VPC selected, you need to make sure you are selecting the right combination.
-
-> Note 2: this script does **NOT** check that an Internet Gateway is created and attached to the VPC. If this is missing there will be no way to access the Aviatrix Controller.
-
-> Note 2: this script does NOT check whether provided Elastic IP is available or not.
+* One Aviatrix Role for Lambda (named aviatrix-role-lambda) with corresponding role policy (named AviatrixLambdaRolePolicy).
 
 ### Step by step Procedure:
 
 1. Launch a controller using instructions available at https://github.com/AviatrixSystems/AWSQuickStart
 
+2. Find the VPC in which controller instance has launched. Go to that VPC from AWS console, and create one or more public subnets preferrably in different AZs for HA across AZ.
+
 2. Now login to controller, and create a new account of any name(for eg. backup) for backup purpose. Note account name and password down.
 
 3. Create a new S3 bucket for backup. Go to Settings->Maintenance->Backup & Restore, and enable backup with account name created in previous step.
 
-4. Go to AWS console, and select controller instance. Click Actions-> Image-> Create Image. Input Image name as `AviatrixController`. Leave other options to their default, and click `Create Image`. This newly created image will act as base image for all configuration restoration from now on.
+4. Go to AWS EC2 console, and select controller instance. Click Actions-> Image-> Create Image. Input Image name as `AviatrixController`. Leave other options to their default, and click `Create Image`. This newly created image will act as base image for all configuration restoration from now on.
 
-5. Once `AviatrixController` image is created, download this repository as zip file, by clicking on top left green button named `Clone or download`, and then click on `Download ZIP`.
+5. Once `AviatrixController` image is created, download this repository as zip file, by clicking on top right green button named `Clone or download`, and then click on `Download ZIP`.
 
 6. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Inside this directory, there will be a zipped file named `aviatrix_ha.zip`.
 
-7. Upload `aviatrix_ha.zip` to S3 bucket created in prerequisite steps.
+7. Create an S3 bucket of nay name(for eg. aviatrix_lambda). Note down this bucket's name, this will be used later. Upload `aviatrix_ha.zip` to this S3 bucket.
 
-8. Access your AWS Console.
+8. Go to AWS Console-> Services -> Management Tools-> CloudFormation.
 
-9. Under Services -> Management Tools.
-```
- Select CloudFormation.
- ```
- OR
-```
- Search for CloudFormation.
-```
-
-10. At the CloudFormation page, Select Create stack.
+10. On CloudFormation page, Select Create stack.
 
 11. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
 
