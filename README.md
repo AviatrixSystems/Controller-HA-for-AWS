@@ -68,7 +68,7 @@ This CloudFormation script will create the following:
 
 17. Click on Create.
 
-18. Wait for status to change to `CREATE_COMPLETE`. If fails, debug or contact Riverbed support.
+18. Wait for status to change to `CREATE_COMPLETE`. If fails, debug or contact Aviatrix support.
 
 19. Enjoy! You are welcome!
 

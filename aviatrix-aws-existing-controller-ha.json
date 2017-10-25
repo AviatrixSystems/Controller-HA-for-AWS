@@ -157,7 +157,7 @@
             "Variables": { 
               "ASG_NAME" : "AviatrixController",
               "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
-              "S3_BUCKET_PARAM" : { "Ref" : "S3BucketBackupParam" },
+              "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
               "AWS_ACCESS_KEY_BACK" : { "Ref" : "AwsAccessKeyParam" },
               "AWS_SECRET_KEY_BACK" : { "Ref" : "AwsSecretKeyParam" },
               "AVIATRIX_USER_BACK" : { "Ref" : "AviatrixUserParam" },
