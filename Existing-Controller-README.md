@@ -12,6 +12,7 @@ This CloudFormation script will create the following:
 ### Pre-requisites:
 
 * VPC of existing controller.
+* Existing controller should have Name tag `AviatrixController`.
 * Existing controller's VPC should have one or more public subnets, preferrably in different AZs for HA across AZ.
 
 ### Step by step Procedure:
