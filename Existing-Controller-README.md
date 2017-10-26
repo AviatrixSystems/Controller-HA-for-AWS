@@ -18,7 +18,7 @@ This CloudFormation script will create the following:
 
 1. Launch a new Controller, with same AMI, and other configurations as current controller.
 
-2. Now login to the new controller, and create a new account of any name(for eg. backup) for backup purpose. Note account name and password down.
+2. Now login to the new controller, and create a new account of any name(for eg. backup) for backup purpose. Note account name and password down. Go to your existing controller, and setup new account with same name and password. Then setup backup on your existing controller with this account.
 
 3. Go to AWS EC2 console, and select new controller instance. Click Actions-> Image-> Create Image. Input Image name as `AviatrixController`. Leave other options to their default, and click `Create Image`. This newly created image will act as base image for all configuration restoration from now on. 
 
