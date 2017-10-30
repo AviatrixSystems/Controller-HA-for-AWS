@@ -63,7 +63,8 @@
       "AwsSecretKeyParam":
       {
         "Type": "String",
-        "Description": "Enter AWS Secret Key with permission to access S3 bucket."
+        "Description": "Enter AWS Secret Key with permission to access S3 bucket.",
+        "NoEcho": true
       },
       "AviatrixUserParam":
       {
