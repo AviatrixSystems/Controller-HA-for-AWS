@@ -17,13 +17,14 @@
         },
         {
           "Label" : { "default":"Aviatrix Controller Backup Configuration" },
-          "Parameters" : [ "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "AviatrixUserParam", "AviatrixPassParam" ]
+          "Parameters" : [ "AviatrixTagParam", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "AviatrixUserParam", "AviatrixPassParam" ]
         }
       ],
       "ParameterLabels" :
       {
          "VPCParam" : { "default" : "Enter VPC of existing controller instance." },
          "SubnetParam" : { "default" : "Enter subnets in different Availability zones within that VPC." },
+         "AviatrixTagParam": { "default" : "Enter Name tag of Aviatrix Controller instance." },
          "S3BucketParam": { "default" : "Enter S3 Bucket name which has aviatrix_ha.zip file." },
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "AwsAccessKeyParam": { "default" : "Enter AWS Access Key with permission to access S3 bucket." },
@@ -44,6 +45,11 @@
       {
         "Type": "List<AWS::EC2::Subnet::Id>",
         "Description": "Select Subnets"
+      },
+      "AviatrixTagParam":
+      {
+        "Type": "String",
+        "Description": "Enter Name tag of Controller instance. Make sure base AMI is also created with same name."
       },
       "S3BucketParam":
       {
@@ -160,6 +166,7 @@
           "Environment" : {
             "Variables": { 
               "ASG_NAME" : "AviatrixController",
+              "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
               "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
               "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
               "AWS_ACCESS_KEY_BACK" : { "Ref" : "AwsAccessKeyParam" },
@@ -168,7 +175,7 @@
               "AVIATRIX_PASS_BACK" : { "Ref" : "AviatrixPassParam" }
             }
           },
-          "FunctionName" : "enable_ha",
+          "FunctionName" : "aviatrix_ha",
           "Handler" : "aviatrix_ha.lambda_handler",
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
           "Runtime" : "python2.7",
