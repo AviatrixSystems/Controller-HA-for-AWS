@@ -91,7 +91,7 @@
       "Type": "AWS::IAM::Role",
       "Properties" :
       {
-        "RoleName": "aviatrix-role-lambda",
+        "RoleName": { "Fn::Join" : [ "-", [ { "Ref" : "AviatrixTagParam" }, "role-lambda" ] ] },
         "AssumeRolePolicyDocument":
         {
           "Version" : "2012-10-17",
@@ -155,7 +155,7 @@
                 }
             ]
           },
-          "PolicyName": "AviatrixLambdaRolePolicy"
+          "PolicyName": { "Fn::Join" : [ "-", [ { "Ref" : "AviatrixTagParam" }, "role-lambda-policy" ] ] }
         }]
       }
     },
@@ -165,7 +165,6 @@
           "Code" : {"S3Bucket" : { "Ref" : "S3BucketParam" }, "S3Key" : "aviatrix_ha.zip"},
           "Environment" : {
             "Variables": { 
-              "ASG_NAME" : "AviatrixController",
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
               "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
               "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
@@ -175,7 +174,7 @@
               "AVIATRIX_PASS_BACK" : { "Ref" : "AviatrixPassParam" }
             }
           },
-          "FunctionName" : "aviatrix_ha",
+          "FunctionName" : { "Fn::Join" : [ "-", [ { "Ref" : "AviatrixTagParam" }, "ha" ] ] },
           "Handler" : "aviatrix_ha.lambda_handler",
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
           "Runtime" : "python2.7",
