@@ -1,4 +1,4 @@
-## Aviatrix - AWS Cloudformation template for Aviatrix controller with HA
+## Aviatrix - AWS Cloudformation template for New Aviatrix controller with HA
 
 ### Description
 This CloudFormation script will create the following:

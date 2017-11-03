@@ -1,4 +1,4 @@
-## Aviatrix - AWS CloudFormation template for HA on existing Aviatrix controller.
+## Aviatrix - AWS CloudFormation template for HA on an Existing Aviatrix controller.
 
 ### Description
 This CloudFormation script will create the following:
@@ -17,7 +17,7 @@ This CloudFormation script will create the following:
 
 ### Step by step Procedure:
 
-1. Launch a new Controller, with same AMI, and other configurations as current controller.
+1. Launch a new Controller using CloudFormation script available at https://github.com/AviatrixSystems/AWSQuickStart. Since this new controller is used to build AMI, for IAMRole parameter, select "aviatrix-role-ec2" to indicate IAM roles and policies have already been created.  
 
 2. Now login to the new controller, and create a new account of any name(for eg. backup) for backup purpose. Note account name and password down. Go to your existing controller, and setup new account with same name and password. Then setup backup on your existing controller with this account.
 
