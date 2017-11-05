@@ -23,8 +23,8 @@
       "ParameterLabels" :
       {
          "VPCParam" : { "default" : "Enter VPC of existing controller instance." },
-         "SubnetParam" : { "default" : "Enter subnets in different Availability zones within that VPC." },
-         "AviatrixTagParam": { "default" : "Enter Name tag of Aviatrix Controller instance." },
+         "SubnetParam" : { "default" : "Enter one or more subnets in different Availability zones within that VPC." },
+         "AviatrixTagParam": { "default" : "Enter Name tag of the existing Aviatrix Controller instance." },
          "S3BucketParam": { "default" : "Enter S3 Bucket name which has aviatrix_ha.zip file." },
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "AwsAccessKeyParam": { "default" : "Enter AWS Access Key with permission to access S3 bucket." },
@@ -44,12 +44,12 @@
       "SubnetParam":
       {
         "Type": "List<AWS::EC2::Subnet::Id>",
-        "Description": "Select Subnets"
+        "Description": "Select multiple Subnets. One of them must be the subnet where the existing controller is deployed on."
       },
       "AviatrixTagParam":
       {
         "Type": "String",
-        "Description": "Enter Name tag of Controller instance. Make sure base AMI is also created with same name."
+        "Description": "Enter the existing controller instance name. Note this instance name must also match the AMI image name created for AWS auto scaling group."
       },
       "S3BucketParam":
       {
@@ -75,12 +75,12 @@
       "AviatrixUserParam":
       {
         "Type": "String",
-        "Description": "Enter Aviatrix Cloud account username used for backup."
+        "Description": "Enter admin or an Aviatrix Cloud account username used for backup. This field in conjuction with password is used to login to the controller launched by autoscaling group and execute Aviatrix API to restore configuration file stored in S3."
       },
       "AviatrixPassParam":
       {
         "Type": "String",
-        "Description": "Enter Aviatrix Cloud account password used for backup.",
+        "Description": "Enter admin's Password or an Aviatrix Cloud account password used for backup. This field in conjuction with username is used to login to the controller launched by autoscaling group and execute Aviatrix API to restore configuration file stored in S3. ",
         "NoEcho": true
       }
   },
