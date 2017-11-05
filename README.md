@@ -1,6 +1,9 @@
 ## Aviatrix - AWS Cloudformation template for New Aviatrix controller with HA
 
 ### Description
+
+This guide helps you enable controller HA in AWS when launch a **New** Aviatrix Controller. If you already have an existing Controller running and would like to enable HA, refer to [Existing-Controller-README.md](https://github.com/AviatrixSystems/Controller-HA-for-AWS/blob/master/Existing-Controller-README.md)
+
 This CloudFormation script will create the following:
 
 * An Aviatrix Autoscaling group with size 1, launching an EC2 Instance (named AviatrixController).
