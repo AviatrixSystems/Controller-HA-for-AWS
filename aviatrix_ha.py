@@ -135,7 +135,8 @@ def set_environ(client, lambda_client, controller_instanceobj, context):
                                                 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
                                                 'AVIATRIX_PASS_BACK': urllib2.quote(os.environ.get('AVIATRIX_PASS_BACK'), '%')
                                                 }})
-
+    EIP = os.environ.get('EIP')
+    print("EIP has been set to {0}.".format(EIP))
 def restore_backup(client, lambda_client, controller_instanceobj, context):
     assign_eip(client, controller_instanceobj)
     EIP = os.environ.get('EIP')
@@ -225,11 +226,15 @@ def setup_ha(client, controller_instanceobj, context):
 def delete_resources(controller_instanceobj):
     LC_NAME = ASG_NAME = SNS_TOPIC = os.environ.get('AVIATRIX_TAG')
  
-    asg_client = boto3.client('autoscaling')   
-    response = asg_client.detach_instances(InstanceIds=[controller_instanceobj['InstanceId']],
-        AutoScalingGroupName=ASG_NAME,
-        ShouldDecrementDesiredCapacity=True)
-    print("Controller instance detached from autoscaling group")
+    asg_client = boto3.client('autoscaling')
+    try:
+        response = asg_client.detach_instances(InstanceIds=[controller_instanceobj['InstanceId']],
+            AutoScalingGroupName=ASG_NAME,
+            ShouldDecrementDesiredCapacity=True)
+        print("Controller instance detached from autoscaling group")
+    except Exception as e:
+        print(e)
+        pass
     asg_client.delete_auto_scaling_group(AutoScalingGroupName=ASG_NAME,ForceDelete=True)
     print("Autoscaling group deleted")
     asg_client.delete_launch_configuration(LaunchConfigurationName=LC_NAME)
