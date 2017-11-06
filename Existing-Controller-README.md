@@ -7,7 +7,6 @@ This CloudFormation script will create the following:
 
 * An Aviatrix Autoscaling group with size 1.
 * An SNS topic with same name as of existing controller instance.
-* A lambda function named `enable_ha`.
 * A lambda function for setting up HA and restoring configuration automatically.
 * An Aviatrix Role for Lambda with corresponding role policy with required permissions.
 
