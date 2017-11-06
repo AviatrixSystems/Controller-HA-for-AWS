@@ -56,7 +56,3 @@ This CloudFormation script will create the following:
 18. Wait for status to change to `CREATE_COMPLETE`. If fails, debug or contact Aviatrix support.
 
 19. Enjoy! You are welcome!
-
-### Caveats:
-
-* There is no current automated way to check if the VPC/Subnet/IGW/Elastic IP are all in place and correctly configured. Manual creation of those elements is required.
