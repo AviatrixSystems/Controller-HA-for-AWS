@@ -64,7 +64,7 @@ def lambda_handler(event, context):
                     responseStatus = 'FAILED'
                     print("Failed to setup environment variables %s" %str(e))
 
-                if responseStatus == 'SUCCESS' and verify_credentials() == True:
+                if responseStatus == 'SUCCESS' and verify_credentials(controller_instanceobj) == True:
                     print("Verified AWS and controller Credentials")
                     print("Trying to setup HA")
                     try:
@@ -90,8 +90,24 @@ def lambda_handler(event, context):
     elif sns_event:
         restore_backup(client, lambda_client, controller_instanceobj, context)
 
+# Set Environment variables. 
+def set_environ(client, lambda_client, controller_instanceobj, context):
+    EIP = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
+    PRIV_IP = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
+    lambda_client.update_function_configuration(FunctionName=context.function_name,
+                                                Environment={'Variables': {'EIP': EIP,
+                                                'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
+                                                'PRIV_IP': PRIV_IP,
+                                                'SUBNETLIST': os.environ.get('SUBNETLIST'),
+                                                'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
+                                                'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
+                                                'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
+                                                'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
+                                                'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')
+                                                }})
+
 # Verify S3 and controller account credentials.
-def verify_credentials():
+def verify_credentials(controller_instanceobj):
     print("Verifying Credentials")
     try:
         s3_client = boto3.client('s3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
@@ -101,10 +117,10 @@ def verify_credentials():
         print("Either S3 credentials or S3 bucket used for backup is not valid. %s" %str(e))
         return False
     print("S3 credentials and S3 bucket both are valid.")
-    EIP = os.environ.get('EIP')
+    EIP = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
     print(EIP)
     BASE_URL = "https://"+EIP+"/v1/api"
-    url = BASE_URL+"?action=login&username="+os.environ.get('AVIATRIX_USER_BACK')+"&password="+os.environ.get('AVIATRIX_PASS_BACK')
+    url = BASE_URL+"?action=login&username="+os.environ.get('AVIATRIX_USER_BACK')+"&password="+urllib2.quote(os.environ.get('AVIATRIX_PASS_BACK'), '%')
     try:
         response = requests.get(url, verify=False)
     except Exception as e:
@@ -120,28 +136,11 @@ def verify_credentials():
         return False
     return True
 
-# Set Environment variables. 
-def set_environ(client, lambda_client, controller_instanceobj, context):
-    EIP = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
-    PRIV_IP = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
-    lambda_client.update_function_configuration(FunctionName=context.function_name,
-                                                Environment={'Variables': {'EIP': EIP,
-                                                'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-                                                'PRIV_IP': PRIV_IP,
-                                                'SUBNETLIST': os.environ.get('SUBNETLIST'),
-                                                'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
-                                                'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
-                                                'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
-                                                'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
-                                                'AVIATRIX_PASS_BACK': urllib2.quote(os.environ.get('AVIATRIX_PASS_BACK'), '%')
-                                                }})
-    EIP = os.environ.get('EIP')
-    print("EIP has been set to {0}.".format(EIP))
 def restore_backup(client, lambda_client, controller_instanceobj, context):
     assign_eip(client, controller_instanceobj)
     EIP = os.environ.get('EIP')
     BASE_URL = "https://"+EIP+"/v1/api"
-    url = BASE_URL+"?action=login&username="+os.environ.get('AVIATRIX_USER_BACK')+"&password="+os.environ.get('AVIATRIX_PASS_BACK')
+    url = BASE_URL+"?action=login&username="+os.environ.get('AVIATRIX_USER_BACK')+"&password="+urllib2.quote(os.environ.get('AVIATRIX_PASS_BACK'), '%')
 
     print(url)
     response = requests.get(url, verify=False)
@@ -156,8 +155,6 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
 
     #This private IP belongs to older terminated instance
     s3_file = "CloudN_"+os.environ.get('PRIV_IP')+"_save_cloudx_config.enc"
-    #s3_file = "CloudN_10.0.0.188_save_cloudx_config.enc"
-
     restore_data = {"CID": cid, "action": "restore_cloudx_config", "cloud_type": "1",
                     "access_key": os.environ.get('AWS_ACCESS_KEY_BACK'),
                     "secret_key": os.environ.get('AWS_SECRET_KEY_BACK'),
@@ -177,7 +174,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
                                                     'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
                                                     'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
                                                     'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
-                                                    'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
+                                                    'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')
                                                     }})
 
 def assign_eip(client, controller_instanceobj):
