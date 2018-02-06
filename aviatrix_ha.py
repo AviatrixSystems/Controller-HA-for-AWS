@@ -142,7 +142,6 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     BASE_URL = "https://"+EIP+"/v1/api"
     url = BASE_URL+"?action=login&username="+os.environ.get('AVIATRIX_USER_BACK')+"&password="+urllib2.quote(os.environ.get('AVIATRIX_PASS_BACK'), '%')
 
-    print(url)
     response = requests.get(url, verify=False)
     response_json = response.json()
     print(response_json)
@@ -159,6 +158,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
                     "access_key": os.environ.get('AWS_ACCESS_KEY_BACK'),
                     "secret_key": os.environ.get('AWS_SECRET_KEY_BACK'),
                     "bucket_name": os.environ.get('S3_BUCKET_BACK'), "file_name":s3_file}
+    print("Trying to restore config with data %s\n" %str(restore_data))
     response = requests.post(BASE_URL, data=restore_data, verify=False)
     response_json = response.json()
     print(response_json)
