@@ -14,7 +14,7 @@ This CloudFormation script will create the following:
 
 ### Step by step Procedure:
 
-1. Launch a controller using instructions available at https://github.com/AviatrixSystems/AWSQuickStart
+1. Launch a controller using instructions available at https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/avx-awsmp-BYOL.template
 
 2. Find the VPC in which controller instance has launched. Go to that VPC from AWS console, and create one or more public subnets preferrably in different AZs for HA across AZ.
 
