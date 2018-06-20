@@ -1,23 +1,29 @@
 from __future__ import print_function
 
 import boto3
-import re
-import json
-import datetime
-import time
 import os
 import uuid
 import json
 import urllib2
+import traceback
 from urllib2 import HTTPError, build_opener, HTTPHandler, Request
 
 import requests
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 print('Loading function')
 
+
 def lambda_handler(event, context):
+    try:
+        _lambda_handler(event, context)
+    except Exception as err:
+        print(str(traceback.format_exc()))
+        print("Lambda function failed due to " + str(err))
+
+
+def _lambda_handler(event, context):
     scheduled_event = False
     sns_event = False
     responseData = {}
@@ -34,8 +40,20 @@ def lambda_handler(event, context):
         sns_event = event.get("Records")[0].get("EventSource") == "aws:sns"
     except:
         pass
-    client = boto3.client('ec2')
-    lambda_client = boto3.client('lambda')
+    if os.environ.get("TESTPY") == "True":
+        print ("Testing")
+        client = boto3.client(
+            'ec2', region_name=os.environ["AWS_TEST_REGION"],
+            aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
+            aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"])
+        lambda_client = boto3.client(
+            'lambda', region_name=os.environ["AWS_TEST_REGION"],
+            aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
+            aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"])
+    else:
+        client = boto3.client('ec2')
+        lambda_client = boto3.client('lambda')
+
     try:
         INSTANCE_NAME = os.environ.get('AVIATRIX_TAG')
         controller_instanceobj = client.describe_instances(Filters=[{'Name': 'instance-state-name', 'Values': ['running']},
@@ -90,6 +108,7 @@ def lambda_handler(event, context):
     elif sns_event:
         restore_backup(client, lambda_client, controller_instanceobj, context)
 
+
 # Set Environment variables. 
 def set_environ(client, lambda_client, controller_instanceobj, context):
     EIP = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
@@ -106,15 +125,19 @@ def set_environ(client, lambda_client, controller_instanceobj, context):
                                                 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')
                                                 }})
 
+
 # Verify S3 and controller account credentials.
 def verify_credentials(controller_instanceobj):
     print("Verifying Credentials")
     try:
-        s3_client = boto3.client('s3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
-                            aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
-        bucket_loc = s3_client.get_bucket_location(Bucket=os.environ.get('S3_BUCKET_BACK'))
-    except Exception as e:
-        print("Either S3 credentials or S3 bucket used for backup is not valid. %s" %str(e))
+        s3_client = boto3.client(
+            's3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
+            aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
+        bucket_loc = s3_client.get_bucket_location(
+            Bucket=os.environ.get('S3_BUCKET_BACK'))
+    except Exception as err:
+        print("Either S3 credentials or S3 bucket used for backup is not "
+              "valid. %s" % str(err))
         return False
     print("S3 credentials and S3 bucket both are valid.")
     EIP = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
@@ -130,11 +153,13 @@ def verify_credentials(controller_instanceobj):
     print(response_json)
     try:
         cid = response_json['CID']
-        print("Created new session with CID %s. Controller backup account and password are valid.\n" %cid)
-    except KeyError, e:
-        print("Invalid backup account or password. Exception: %s" %str(e))
+        print("Created new session with CID {}."
+              " Controller backup account and password are valid.\n".format(cid))
+    except KeyError as e:
+        print("Invalid backup account or password. Exception: {}".format((e)))
         return False
     return True
+
 
 def restore_backup(client, lambda_client, controller_instanceobj, context):
     assign_eip(client, controller_instanceobj)
@@ -147,9 +172,9 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     print(response_json)
     try:
         cid = response_json['CID']
-        print("Created new session with CID %s\n" %cid)
-    except KeyError, e:
-        print("Unable to create session. %s" %str(e))
+        print("Created new session with CID {}\n".format(cid))
+    except KeyError as err:
+        print("Unable to create session. {}".format(e))
         return
 
     #This private IP belongs to older terminated instance
@@ -177,12 +202,14 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
                                                     'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')
                                                     }})
 
+
 def assign_eip(client, controller_instanceobj):
     EIP = os.environ.get('EIP')
     eip_alloc_id = client.describe_addresses(PublicIps=[EIP]).get('Addresses')[0].get('AllocationId')
     client.associate_address(AllocationId=eip_alloc_id,
                                      InstanceId=controller_instanceobj['InstanceId'])
     print("Assigned elastic IP")
+
 
 def setup_ha(client, controller_instanceobj, context):
     AMI_NAME = LC_NAME = ASG_NAME = SNS_TOPIC = os.environ.get('AVIATRIX_TAG')
@@ -220,6 +247,7 @@ def setup_ha(client, controller_instanceobj, context):
                     TopicARN=sns_topic_arn)
     print('Attached ASG')
 
+
 def delete_resources(controller_instanceobj):
     LC_NAME = ASG_NAME = SNS_TOPIC = os.environ.get('AVIATRIX_TAG')
  
@@ -240,6 +268,7 @@ def delete_resources(controller_instanceobj):
     sns_topic_arn = sns_client.create_topic(Name=SNS_TOPIC).get('TopicArn')
     sns_client.delete_topic(TopicArn=sns_topic_arn)
     print("SNS topic deleted")
+
 
 # Send response to cloud formation template for custom resource creation by cloud formation
 def sendResponse(event, context, response_status, reason=None, response_data=None, physical_resource_id=None):
