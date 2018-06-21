@@ -1,5 +1,5 @@
 from __future__ import print_function
-
+import time
 import boto3
 import botocore
 import os
@@ -12,6 +12,11 @@ from urllib2 import HTTPError, build_opener, HTTPHandler, Request
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+MAX_LOGIN_TIMEOUT = 300
+WAIT_DELAY = 30
+
+INITIAL_SETUP_WAIT = 180
 
 
 class AvxError(Exception):
@@ -88,7 +93,7 @@ def _lambda_handler(event, context):
         responseStatus = 'SUCCESS'
         if event['RequestType'] == 'Create':
                 try:
-                    set_environ(client, lambda_client, controller_instanceobj, context)
+                    set_environ(lambda_client, controller_instanceobj, context)
                     print("Environment variables have been set.")
                 except Exception as e:
                     responseStatus = 'FAILED'
@@ -121,7 +126,7 @@ def _lambda_handler(event, context):
         restore_backup(client, lambda_client, controller_instanceobj, context)
 
 
-def set_environ(client, lambda_client, controller_instanceobj, context):
+def set_environ(lambda_client, controller_instanceobj, context):
     """ Sets Environment variables """
 
     EIP = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
@@ -192,7 +197,7 @@ def retrieve_controller_version(version_file):
         aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
         aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
     try:
-        with open('version.txt', 'wb') as data:
+        with open('/tmp/version_ctrlha.txt', 'w') as data:
             s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), version_file,
                                  data)
     except botocore.exceptions.ClientError as e:
@@ -201,9 +206,9 @@ def retrieve_controller_version(version_file):
             raise AvxError("The cloudx version file does not exist")
         else:
             raise
-    if not os.path.exists('version.txt'):
+    if not os.path.exists('/tmp/version_ctrlha.txt'):
         raise AvxError("Unable to open version file")
-    with open("version.txt") as fileh:
+    with open("/tmp/version_ctrlha.txt") as fileh:
         buf = fileh.read()
     print ("Retrieved version " + str(buf))
     if not buf:
@@ -254,7 +259,19 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
         'NetworkInterfaces')[0].get('PrivateIpAddress')
     print("New Private IP " + str(new_private_ip))
 
-    cid = login_to_controller(eip, "admin", new_private_ip)
+    total_time = 0
+    while total_time <= MAX_LOGIN_TIMEOUT:
+        try:
+            cid = login_to_controller(eip, "admin", new_private_ip)
+        except Exception as err:
+            print(str(err))
+            print("Login failed, Trying again in " + str(WAIT_DELAY))
+            total_time += WAIT_DELAY
+            time.sleep(WAIT_DELAY)
+        else:
+            break
+    if total_time == MAX_LOGIN_TIMEOUT:
+        raise AvxError("Could not login to the controller")
 
     priv_ip = os.environ.get('PRIV_IP')     # This private IP belongs to older
                                             # terminated instance
@@ -264,7 +281,8 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
 
     run_initial_setup(eip, cid, version)
 
-    # Need to login again as initial setup invalidates cid
+    # Need to login again as initial setup invalidates cid after waiting
+
     cid = login_to_controller(eip, "admin", new_private_ip)
 
     s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
@@ -278,38 +296,51 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
                     "file_name": s3_file}
     print("Trying to restore config with data %s\n" % str(restore_data))
     base_url = "https://" + eip + "/v1/api"
-    response = requests.post(base_url, data=restore_data, verify=False)
-    response_json = response.json()
-    print(response_json)
-    # If restore succeeded, update private IP to that of new instance now.
-    if response_json['return'] is True:
-        lambda_client.update_function_configuration(
-            FunctionName=context.function_name,
-            Environment={'Variables':
-                             {'EIP': eip,
-                              'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-                              'PRIV_IP': new_private_ip,
-                              'SUBNETLIST': os.environ.get('SUBNETLIST'),
-                              'AWS_ACCESS_KEY_BACK':
-                                  os.environ.get('AWS_ACCESS_KEY_BACK'),
-                              'AWS_SECRET_KEY_BACK':
-                                  os.environ.get('AWS_SECRET_KEY_BACK'),
-                              'S3_BUCKET_BACK':
-                                  os.environ.get('S3_BUCKET_BACK'),
-                              'AVIATRIX_USER_BACK':
-                                  os.environ.get('AVIATRIX_USER_BACK'),
-                              'AVIATRIX_PASS_BACK':
-                                  os.environ.get('AVIATRIX_PASS_BACK')
-                              }})
-        print("Updated lambda configuration")
+
+    total_time = 0
+    sleep = True
+    while total_time <= INITIAL_SETUP_WAIT:
+        if sleep:
+            print("Waiting for safe initial setup completion, maximum of " +
+                  str(INITIAL_SETUP_WAIT - total_time) + " seconds remaining")
+            time.sleep(WAIT_DELAY)
+        else:
+            sleep = True
+        response = requests.post(base_url, data=restore_data, verify=False)
+        response_json = response.json()
+        print(response_json)
+        if response_json.get('return', False) is True:
+            # If restore succeeded, update private IP to that of the new
+            #  instance now.
+            print("Successfully restored backup. Updating lambda configuration")
+            set_environ(lambda_client, controller_instanceobj, context)
+            print("Updated lambda configuration")
+            return
+        elif response_json.get('reason', '') == 'valid action required':
+            print("API is not ready yet")
+            total_time += WAIT_DELAY
+        elif response_json.get('reason', '') == 'CID is invalid or expired':
+            sleep = False
+            try:
+                cid = login_to_controller(eip, "admin", new_private_ip)
+            except AvxError:
+                pass
+            else:
+                restore_data["CID"] = cid
+        else:
+            print("Restoring backup failed due to " +
+                  str(response_json.get('reason', '')))
+            return
+    print("Restore failed, did not update lambda config")
 
 
 def assign_eip(client, controller_instanceobj):
     """ Assign the EIP to the new instance"""
-    EIP = os.environ.get('EIP')
-    eip_alloc_id = client.describe_addresses(PublicIps=[EIP]).get('Addresses')[0].get('AllocationId')
+    eip = os.environ.get('EIP')
+    eip_alloc_id = client.describe_addresses(
+        PublicIps=[eip]).get('Addresses')[0].get('AllocationId')
     client.associate_address(AllocationId=eip_alloc_id,
-                                     InstanceId=controller_instanceobj['InstanceId'])
+                             InstanceId=controller_instanceobj['InstanceId'])
     print("Assigned elastic IP")
 
 
@@ -369,7 +400,8 @@ def delete_resources(controller_instanceobj):
  
     asg_client = boto3.client('autoscaling')
     try:
-        response = asg_client.detach_instances(InstanceIds=[controller_instanceobj['InstanceId']],
+        asg_client.detach_instances(
+            InstanceIds=[controller_instanceobj['InstanceId']],
             AutoScalingGroupName=ASG_NAME,
             ShouldDecrementDesiredCapacity=True)
         print("Controller instance detached from autoscaling group")

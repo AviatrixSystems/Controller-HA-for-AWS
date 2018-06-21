@@ -178,7 +178,7 @@
           "Handler" : "aviatrix_ha.lambda_handler",
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
           "Runtime" : "python2.7",
-          "Timeout" : "60",
+          "Timeout" : "300",
        }
     },
     "SetupHA": {
