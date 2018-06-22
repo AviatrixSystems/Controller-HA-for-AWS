@@ -10,47 +10,47 @@ This CloudFormation script will create the following:
 * A lambda function for setting up HA and restoring configuration automatically.
 * An Aviatrix Role for Lambda with corresponding role policy with required permissions.
 
+This script is only supported for Aviatrix Controller version >= 3.4
 ### Pre-requisites:
 
 * VPC of existing controller.
-* Existing controller's VPC should have one or more public subnets, preferrably in different AZs for HA across AZ.
+* Existing controller's VPC should have one or more public subnets, preferrably in different AZs for HA across AZ. 
+* Existing controller version should be >= 3.4. if not, upgrade your controller to the latest
+* Existing controller must have backup and restore enabled
 
 ### Step by step Procedure:
 
-1. Prepare a base image AMI for auto scaling group. 
-   * Launch a new temporary Controller in the same VPC as the existing controller using CloudFormation script available at https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/avx-awsmp-BYOL.template. Since this new controller is used to build AMI for AWS auto scaling group, select `aviatrix-role-ec2` for IAMRole parameter to indicate IAM roles and policies have already been created when the existing controller was launched. Once it's launched, login to this new temporary controller, go through the initial bootup sequence to change the admin's password and re-login. Note down the admin password.
+1. Make sure controller version is >= 3.4 ni Settings->Maintence->Upgrade. if not, upgrade your controller to the latest in Settings->Maintence->Upgrade
 
-   * Go to your existing controller(`not the temporary one created in previous step`), [enable backup function](http://docs.aviatrix.com/HowTos/controller_backup.html) to a S3 bucket if you have not already done so. Backup current configuration using button `Backup Now`. Note currently the script only accpets access key and secret ID to access this S3 bucket, you may need to go to AWS console to create an access key and secret ID to access this S3 bucket. This credential will be used for restore configuration on an controller launched by auto scaling group.
+2. In the controller make sure that daily backup and restore is enabled in Settings->Maintence->Backup restore page
 
-   * Go to AWS EC2 console, and select new temporary controller instance. `Make sure you select the new temporary controller as it may have the same name as the existing controller`. Click Actions-> Image-> Create Image. Input an Image name. Name the image same as your exisiting controller(`not the temporary one created in previous step`) instance name. Leave other options to their default, and click `Create Image`. This newly created image will act as base image for auto scaling group to launch a new controller to restore configuration from now on.
+3. Do a "Backup Now" from  the Settings->Maintence->Backup restore page
 
-4. Once image is created, we dont need temporary controller anymore. Go ahead and delete this new CloudFormation stack to terminate temporary controller.
+4. Download this repository as zip file, by clicking on top right green button named `Clone or download`, and then click on `Download ZIP`.
 
-5. Download this repository as zip file, by clicking on top right green button named `Clone or download`, and then click on `Download ZIP`.
+5. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Inside this directory, there will be a zipped file named `aviatrix_ha.zip`.
 
-6. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Inside this directory, there will be a zipped file named `aviatrix_ha.zip`.
+6. Create an S3 bucket of any name(for eg. aviatrix_lambda). Upload `aviatrix_ha.zip` to this S3 bucket. Note down this bucket's name, this will be used later while setting up CloudFormation template.
 
-7. Create an S3 bucket of any name(for eg. aviatrix_lambda). Upload `aviatrix_ha.zip` to this S3 bucket. Note down this bucket's name, this will be used later while setting up CloudFormation template.
+7. Go to AWS Console-> Services -> Management Tools-> CloudFormation.
 
-8. Go to AWS Console-> Services -> Management Tools-> CloudFormation.
+8. At the CloudFormation page, Select Create stack.
 
-10. At the CloudFormation page, Select Create stack.
+9. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
 
-11. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
+10. Click next.
 
-12. Click next.
+11. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHa`
 
-13. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHa`
+12. Enter the parameters. Read carefully the descriptions and instructions. Click next.
 
-14. Enter the parameters. Read carefully the descriptions and instructions. Click next.
+13. Specify your options/tags/permissions as per your policies, when in doubt just click next.
 
-15. Specify your options/tags/permissions as per your policies, when in doubt just click next.
-
-16. On the review page, scroll to the bottom and check the button that reads:
+14. On the review page, scroll to the bottom and check the button that reads:
 `I acknowledge that AWS CloudFormation might create IAM resources with custom names.`
 
-17. Click on Create.
+15. Click on Create.
 
-18. Wait for status to change to `CREATE_COMPLETE`. If fails, debug or contact Aviatrix support.
+16. Wait for status to change to `CREATE_COMPLETE`. If fails, debug or contact Aviatrix support.
 
-19. Enjoy! You are welcome!
+17. Enjoy! You are welcome!

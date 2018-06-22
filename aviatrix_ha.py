@@ -319,7 +319,8 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
         elif response_json.get('reason', '') == 'valid action required':
             print("API is not ready yet")
             total_time += WAIT_DELAY
-        elif response_json.get('reason', '') == 'CID is invalid or expired':
+        elif response_json.get('reason', '') == 'CID is invalid or expired.':
+            print("Service abrupty restarted")
             sleep = False
             try:
                 cid = login_to_controller(eip, "admin", new_private_ip)

@@ -22,36 +22,34 @@ This CloudFormation script will create the following:
 
 3. Create a new S3 bucket for backup. Go to Settings->Maintenance->Backup & Restore, and enable backup with account name created in previous step.
 
-4. Go to AWS EC2 console, and select controller instance. Click Actions-> Image-> Create Image. Input Image name as `AviatrixController`. Leave other options to their default, and click `Create Image`. This newly created image will act as base image for all configuration restoration from now on.
+4. Once the backup image is complete, download this repository as zip file, by clicking on top right green button named `Clone or download`, and then click on `Download ZIP`.
 
-5. Once `AviatrixController` image is created, download this repository as zip file, by clicking on top right green button named `Clone or download`, and then click on `Download ZIP`.
+5. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Inside this directory, there will be a zipped file named `aviatrix_ha.zip`.
 
-6. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Inside this directory, there will be a zipped file named `aviatrix_ha.zip`.
+6. Create an S3 bucket of nay name(for eg. aviatrix_lambda). Note down this bucket's name, this will be used later. Upload `aviatrix_ha.zip` to this S3 bucket.
 
-7. Create an S3 bucket of nay name(for eg. aviatrix_lambda). Note down this bucket's name, this will be used later. Upload `aviatrix_ha.zip` to this S3 bucket.
+7. Go to AWS Console-> Services -> Management Tools-> CloudFormation.
 
-8. Go to AWS Console-> Services -> Management Tools-> CloudFormation.
+8. On CloudFormation page, Select Create stack.
 
-10. On CloudFormation page, Select Create stack.
+9. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
 
-11. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
+10. Click next.
 
-12. Click next.
+11. On the Stack Name textbox, Name your Stack -> Something like *AviatrixHa*
 
-13. On the Stack Name textbox, Name your Stack -> Something like *AviatrixHa*
+12. Enter the parameters as per description. Click next.
 
-14. Enter the parameters as per description. Click next.
+13. Specify your options/tags/permissions as per your policies, when in doubt just click next.
 
-15. Specify your options/tags/permissions as per your policies, when in doubt just click next.
-
-16. On the review page, scroll to the bottom and check the button that reads:
+14. On the review page, scroll to the bottom and check the button that reads:
 *I acknowledge that AWS CloudFormation might create IAM resources with custom names.*
 
-17. Click on Create.
+15. Click on Create.
 
-18. Wait for status to change to `CREATE_COMPLETE`. If fails, debug or contact Aviatrix support.
+16. Wait for status to change to `CREATE_COMPLETE`. If fails, debug or contact Aviatrix support.
 
-19. Enjoy! You are welcome!
+17. Enjoy! You are welcome!
 
 ### Caveats:
 
