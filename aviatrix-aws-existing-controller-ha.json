@@ -49,7 +49,7 @@
       "AviatrixTagParam":
       {
         "Type": "String",
-        "Description": "Enter the existing controller instance name. Note this instance name must also match the AMI image name created for AWS auto scaling group. It should not contain only alphanumeric and -_, No spaces"
+        "Description": "Enter the existing controller instance name. Note this instance name must also match the AMI image name created for AWS auto scaling group. It should contain only letters, numbers, hyphens, or underscores. No spaces allowed"
       },
       "S3BucketParam":
       {
