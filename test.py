@@ -1,3 +1,4 @@
+""" Test Module to test restore functionality"""
 import os
 import argparse
 import aviatrix_ha
@@ -16,7 +17,7 @@ os.environ["PRIV_IP"] = "172.31.45.188"  # Older private IP
 os.environ["S3_BUCKET_BACK"] = "backrestorebucketname"
 os.environ["SUBNETLIST"] = "subnet-497e8as511,subnet-87ase3,subnet-aasd6a0ef"
 
-context = argparse.Namespace()
-context.function_name = "ctrlhami-ha"
-event = {"Records": [{"EventSource": "aws:sns"}]}
-aviatrix_ha.lambda_handler(event, context)
+CONTEXT = argparse.Namespace()
+CONTEXT.function_name = "ctrlhami-ha"
+EVENT = {"Records": [{"EventSource": "aws:sns"}]}
+aviatrix_ha.lambda_handler(EVENT, CONTEXT)

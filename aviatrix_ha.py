@@ -1,17 +1,19 @@
+""" Aviatrix Controller HA Lambda script """
 from __future__ import print_function
 import time
-import boto3
-import botocore
 import os
 import uuid
 import json
 import urllib2
-import traceback
 from urllib2 import HTTPError, build_opener, HTTPHandler, Request
-
-import requests
+import traceback
+import urllib3
 from urllib3.exceptions import InsecureRequestWarning
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+import requests
+import boto3
+import botocore
+
+urllib3.disable_warnings(InsecureRequestWarning)
 
 MAX_LOGIN_TIMEOUT = 300
 WAIT_DELAY = 30
@@ -45,20 +47,19 @@ def _lambda_handler(event, context):
          made by Cloud formation template.
         sns_event - Request from sns to attach elastic ip to new instance
          created after controller failover. """
-    scheduled_event = False
+    # scheduled_event = False
     sns_event = False
-    responseData = {}
+    response_data = {}
     try:
         cf_request = event.get("StackId", None)
-    except:
+    except Exception:
         print("Not from CFT")
-        pass
     try:
         sns_event = event.get("Records")[0].get("EventSource") == "aws:sns"
-    except:
+    except Exception:
         pass
     if os.environ.get("TESTPY") == "True":
-        print ("Testing")
+        print("Testing")
         client = boto3.client(
             'ec2', region_name=os.environ["AWS_TEST_REGION"],
             aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
@@ -72,87 +73,102 @@ def _lambda_handler(event, context):
         lambda_client = boto3.client('lambda')
 
     try:
-        INSTANCE_NAME = os.environ.get('AVIATRIX_TAG')
-        controller_instanceobj = client.describe_instances(Filters=[{'Name': 'instance-state-name', 'Values': ['running']},
-                        {'Name': 'tag:Name','Values': [INSTANCE_NAME]}])['Reservations'][0]['Instances'][0]
-    except Exception as e:
-        print("Can't find Controller instance with name tag %s. %s" % (INSTANCE_NAME, str(e)))
+        instance_name = os.environ.get('AVIATRIX_TAG')
+        controller_instanceobj = client.describe_instances(
+            Filters=[
+                {'Name': 'instance-state-name', 'Values': ['running']},
+                {'Name': 'tag:Name', 'Values': [instance_name]}]
+        )['Reservations'][0]['Instances'][0]
+    except Exception as err:
+        print("Can't find Controller instance with name tag %s. %s" %
+              (instance_name, str(err)))
         if cf_request:
-            if event.get("RequestType",None) == 'Create':
-                sendResponse(event, context, 'Failed', responseData)
+            if event.get("RequestType", None) == 'Create':
+                send_response(event, context, 'Failed', response_data)
             else:
-                # While deleting cloud formation template, this lambda function will be called
-                # to delete AssignEIP resource. If controller instance is not present,
-                # then cloud formation will be stuck in deletion.
-                # So just pass in that case.
+                # While deleting cloud formation template, this lambda function
+                # will be called to delete AssignEIP resource. If controller
+                # instance is not present, then cloud formation will be stuck
+                # in deletion.So just pass in that case.
                 pass
         else:
             return
 
     if cf_request:
-        responseStatus = 'SUCCESS'
+        response_status = 'SUCCESS'
         if event['RequestType'] == 'Create':
-                try:
-                    set_environ(lambda_client, controller_instanceobj, context)
-                    print("Environment variables have been set.")
-                except Exception as e:
-                    responseStatus = 'FAILED'
-                    print("Failed to setup environment variables %s" %str(e))
+            try:
+                set_environ(lambda_client, controller_instanceobj, context)
+                print("Environment variables have been set.")
+            except Exception as err:
+                response_status = 'FAILED'
+                print("Failed to setup environment variables %s" % str(err))
 
-                if responseStatus == 'SUCCESS' and verify_credentials(controller_instanceobj) == True:
-                    print("Verified AWS and controller Credentials")
-                    print("Trying to setup HA")
-                    try:
-                        setup_ha(client, controller_instanceobj, context)
-                    except Exception as e:
-                        responseStatus = 'FAILED'
-                        print("Failed to setup HA %s" %str(e))
-                else:
-                    responseStatus = 'FAILED'
-                    print("Unable to verify AWS or S3 credentials. Exiting...")
+            if response_status == 'SUCCESS' and\
+                    verify_credentials(controller_instanceobj) is True:
+                print("Verified AWS and controller Credentials")
+                print("Trying to setup HA")
+                try:
+                    setup_ha(client, controller_instanceobj, context)
+                except Exception as err:
+                    response_status = 'FAILED'
+                    print("Failed to setup HA %s" % str(err))
+            else:
+                response_status = 'FAILED'
+                print("Unable to verify AWS or S3 credentials. Exiting...")
         elif event['RequestType'] == 'Delete':
             try:
                 print("Trying to delete lambda created resources")
                 delete_resources(controller_instanceobj)
-            except Exception as e:
-                print("Failed to delete lambda created resources. %s" %str(e))
-                print("You'll have to manually delete Auto Scaling group, Launch Configuration, and SNS topic, all with name {}.".format(INSTANCE_NAME))
-                pass
+            except Exception as err:
+                print("Failed to delete lambda created resources. %s" %
+                      str(err))
+                print("You'll have to manually delete Auto Scaling group,"
+                      " Launch Configuration, and SNS topic, all with"
+                      " name {}.".format(instance_name))
 
         # Send response to CFT.
-        sendResponse(event, context, responseStatus, responseData)
-        print("Sent {} to CFT.".format(responseStatus))
+        send_response(event, context, response_status, response_data)
+        print("Sent {} to CFT.".format(response_status))
     elif sns_event:
         restore_backup(client, lambda_client, controller_instanceobj, context)
 
 
-def set_environ(lambda_client, controller_instanceobj, context):
+def set_environ(lambda_client, controller_instanceobj, context,
+                eip=None):
     """ Sets Environment variables """
+    if eip is None:
+        eip = controller_instanceobj[
+            'NetworkInterfaces'][0]['Association'].get('PublicIp')
+    else:
+        eip = os.environ.get('EIP')
+    priv_ip = controller_instanceobj.get(
+        'NetworkInterfaces')[0].get('PrivateIpAddress')
+    lambda_client.update_function_configuration(
+        FunctionName=context.function_name,
+        Environment=
+        {'Variables':
+             {'EIP': eip,
+              'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
+              'PRIV_IP': priv_ip,
+              'SUBNETLIST': os.environ.get('SUBNETLIST'),
+              'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
+              'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
+              'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
+              'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
+              'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')}})
 
-    EIP = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
-    PRIV_IP = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
-    lambda_client.update_function_configuration(FunctionName=context.function_name,
-                                                Environment={'Variables': {'EIP': EIP,
-                                                'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-                                                'PRIV_IP': PRIV_IP,
-                                                'SUBNETLIST': os.environ.get('SUBNETLIST'),
-                                                'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
-                                                'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
-                                                'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
-                                                'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
-                                                'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')
-                                                }})
 
-
-def login_to_controller(ip, username, pwd):
+def login_to_controller(ip_addr, username, pwd):
     """ Logs into the controller and returns the cid"""
-    base_url = "https://" + ip + "/v1/api"
+    base_url = "https://" + ip_addr + "/v1/api"
     url = base_url + "?action=login&username=" + username + "&password=" +\
           urllib2.quote(pwd, '%')
     try:
         response = requests.get(url, verify=False)
     except Exception as err:
-        print("Can't connect to controller with elastic IP %s. %s" % (ip, str(err)))
+        print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
+                                                                      str(err)))
         raise AvxError(str(err))
     response_json = response.json()
     print(response_json)
@@ -173,8 +189,8 @@ def verify_credentials(controller_instanceobj):
         s3_client = boto3.client(
             's3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
             aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
-        bucket_loc = s3_client.get_bucket_location(
-            Bucket=os.environ.get('S3_BUCKET_BACK'))
+        s3_client.get_bucket_location(
+            Bucket=os.environ.get('S3_BUCKET_BACK'))  # get_bucket_location
     except Exception as err:
         print("Either S3 credentials or S3 bucket used for backup is not "
               "valid. %s" % str(err))
@@ -200,8 +216,8 @@ def retrieve_controller_version(version_file):
         with open('/tmp/version_ctrlha.txt', 'w') as data:
             s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), version_file,
                                  data)
-    except botocore.exceptions.ClientError as e:
-        if e.response['Error']['Code'] == "404":
+    except botocore.exceptions.ClientError as err:
+        if err.response['Error']['Code'] == "404":
             print("The object does not exist.")
             raise AvxError("The cloudx version file does not exist")
         else:
@@ -210,7 +226,7 @@ def retrieve_controller_version(version_file):
         raise AvxError("Unable to open version file")
     with open("/tmp/version_ctrlha.txt") as fileh:
         buf = fileh.read()
-    print ("Retrieved version " + str(buf))
+    print("Retrieved version " + str(buf))
     if not buf:
         raise AvxError("Version file is empty")
     print("Parsing version")
@@ -223,9 +239,9 @@ def retrieve_controller_version(version_file):
         return version
 
 
-def run_initial_setup(ip, cid, version):
+def run_initial_setup(ip_addr, cid, version):
     """ Boots the fresh controller to the specific version"""
-    base_url = "https://" + ip + "/v1/api"
+    base_url = "https://" + ip_addr + "/v1/api"
     # print(json.dumps(controller_instanceobj, indent=2))
     post_data = {"CID": cid,
                  "target_version": version,
@@ -239,7 +255,7 @@ def run_initial_setup(ip, cid, version):
     print(response_json)
 
     if response_json.get('return') is True:
-        print ("Successfully initialized the controller")
+        print("Successfully initialized the controller")
     else:
         raise AvxError("Could not bring up the new controller to the "
                        "specific version")
@@ -313,7 +329,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
             # If restore succeeded, update private IP to that of the new
             #  instance now.
             print("Successfully restored backup. Updating lambda configuration")
-            set_environ(lambda_client, controller_instanceobj, context)
+            set_environ(lambda_client, controller_instanceobj, context, eip)
             print("Updated lambda configuration")
             return
         elif response_json.get('reason', '') == 'valid action required':
@@ -347,7 +363,7 @@ def assign_eip(client, controller_instanceobj):
 
 def setup_ha(_client, controller_instanceobj, context):
     """ Setup HA """
-    LC_NAME = ASG_NAME = SNS_TOPIC = os.environ.get('AVIATRIX_TAG')
+    lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
     # AMI_NAME = LC_NAME
     # ami_id = client.describe_images(
     #     Filters=[{'Name': 'name','Values':
@@ -356,29 +372,29 @@ def setup_ha(_client, controller_instanceobj, context):
     asg_client = boto3.client('autoscaling')
 
     asg_client.create_launch_configuration(
-            InstanceId=controller_instanceobj['InstanceId'],
-            LaunchConfigurationName=LC_NAME,
-            ImageId=ami_id)
+        InstanceId=controller_instanceobj['InstanceId'],
+        LaunchConfigurationName=lc_name,
+        ImageId=ami_id)
 
     asg_client.create_auto_scaling_group(
-        AutoScalingGroupName=ASG_NAME,
-        LaunchConfigurationName=LC_NAME,
+        AutoScalingGroupName=asg_name,
+        LaunchConfigurationName=lc_name,
         MinSize=0,
         MaxSize=1,
         VPCZoneIdentifier=os.environ.get('SUBNETLIST'),
-        Tags=[{'Key': 'Name', 'Value': ASG_NAME, 'PropagateAtLaunch': True}]
+        Tags=[{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
     )
     print('Created ASG')
-    asg_client.attach_instances(InstanceIds=[controller_instanceobj[
-                                                 'InstanceId']],
-                                AutoScalingGroupName=ASG_NAME)
+    asg_client.attach_instances(InstanceIds=
+                                [controller_instanceobj['InstanceId']],
+                                AutoScalingGroupName=asg_name)
     sns_client = boto3.client('sns')
-    sns_topic_arn = sns_client.create_topic(Name=SNS_TOPIC).get('TopicArn')
+    sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
     print('Created SNS topic')
     lambda_client = boto3.client('lambda')
     lambda_fn_arn = lambda_client.get_function(
         FunctionName=context.function_name).get('Configuration').get(
-        'FunctionArn')
+            'FunctionArn')
     sns_client.subscribe(TopicArn=sns_topic_arn,
                          Protocol='lambda',
                          Endpoint=lambda_fn_arn).get('SubscriptionArn')
@@ -389,7 +405,7 @@ def setup_ha(_client, controller_instanceobj, context):
                                  SourceArn=sns_topic_arn)
     print('SNS topic: Added lambda subscription.')
     asg_client.put_notification_configuration(
-        AutoScalingGroupName=ASG_NAME,
+        AutoScalingGroupName=asg_name,
         NotificationTypes=['autoscaling:EC2_INSTANCE_LAUNCH'],
         TopicARN=sns_topic_arn)
     print('Attached ASG')
@@ -397,31 +413,30 @@ def setup_ha(_client, controller_instanceobj, context):
 
 def delete_resources(controller_instanceobj):
     """ Cloud formation cleanup"""
-    LC_NAME = ASG_NAME = SNS_TOPIC = os.environ.get('AVIATRIX_TAG')
- 
+    lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
+
     asg_client = boto3.client('autoscaling')
     try:
         asg_client.detach_instances(
             InstanceIds=[controller_instanceobj['InstanceId']],
-            AutoScalingGroupName=ASG_NAME,
+            AutoScalingGroupName=asg_name,
             ShouldDecrementDesiredCapacity=True)
         print("Controller instance detached from autoscaling group")
-    except Exception as e:
-        print(e)
-        pass
-    asg_client.delete_auto_scaling_group(AutoScalingGroupName=ASG_NAME,
+    except Exception as err:
+        print(err)
+    asg_client.delete_auto_scaling_group(AutoScalingGroupName=asg_name,
                                          ForceDelete=True)
     print("Autoscaling group deleted")
-    asg_client.delete_launch_configuration(LaunchConfigurationName=LC_NAME)
+    asg_client.delete_launch_configuration(LaunchConfigurationName=lc_name)
     print("Launch configuration deleted")
     sns_client = boto3.client('sns')
-    sns_topic_arn = sns_client.create_topic(Name=SNS_TOPIC).get('TopicArn')
+    sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
     sns_client.delete_topic(TopicArn=sns_topic_arn)
     print("SNS topic deleted")
 
 
-def sendResponse(event, context, response_status, reason=None,
-                 response_data=None, physical_resource_id=None):
+def send_response(event, context, response_status, reason=None,
+                  response_data=None, physical_resource_id=None):
     """ Send response to cloud formation template for custom resource creation
      by cloud formation"""
 
