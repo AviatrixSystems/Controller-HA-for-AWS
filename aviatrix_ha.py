@@ -461,6 +461,31 @@ def assign_eip(client, controller_instanceobj):
     print("Assigned elastic IP")
 
 
+def validate_keypair(key_name):
+    """ Validates Keypairs"""
+    try:
+        client = boto3.client('ec2',
+                              region_name=os.environ["AWS_TEST_REGION"],
+                              aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
+                              aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"])
+        response = client.describe_key_pairs()
+    except botocore.exceptions.ClientError as err:
+        raise AvxError(str(err))
+    key_aws_list = [key['KeyName'] for key in response['KeyPairs']]
+    if key_name not in key_aws_list:
+        print ("Key does not exist. Creating")
+        try:
+            client = boto3.client('ec2',
+                                  region_name=os.environ["AWS_TEST_REGION"],
+                                  aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
+                                  aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"])
+            client.create_key_pair(KeyName=key_name)
+        except botocore.exceptions.ClientError as err:
+            raise AvxError(str(err))
+    else:
+        print ("Key exists")
+
+
 def validate_subnets(subnet_list):
     """ Validates subnets"""
     vpc_id = os.environ.get('VPC_ID')
@@ -502,6 +527,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     sub_list = os.environ.get('SUBNETLIST')
     val_subnets = validate_subnets(sub_list.split(","))
     print ("Valid subnets %s" % val_subnets)
+    validate_keypair(key_name)
     asg_client.create_launch_configuration(
         LaunchConfigurationName=lc_name,
         ImageId=ami_id,
