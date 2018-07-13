@@ -49,14 +49,17 @@ def _lambda_handler(event, context):
          created after controller failover. """
     # scheduled_event = False
     sns_event = False
-    response_data = {}
+    print("Event: %s" % event)
     try:
-        cf_request = event.get("StackId", None)
-    except Exception:
+        cf_request = event["StackId"]
+        print("From CFT")
+    except (KeyError, AttributeError, TypeError):
+        cf_request = None
         print("Not from CFT")
     try:
-        sns_event = event.get("Records")[0].get("EventSource") == "aws:sns"
-    except Exception:
+        sns_event = event["Records"][0]["EventSource"] == "aws:sns"
+        print("From SNS Event")
+    except (AttributeError, IndexError, KeyError, TypeError):
         pass
     if os.environ.get("TESTPY") == "True":
         print("Testing")
@@ -84,54 +87,142 @@ def _lambda_handler(event, context):
               (instance_name, str(err)))
         if cf_request:
             if event.get("RequestType", None) == 'Create':
-                send_response(event, context, 'Failed', response_data)
+                send_response(event, context, 'Failed', {})
+                return
             else:
+                print("Ignoring delete CFT for no Controller")
                 # While deleting cloud formation template, this lambda function
                 # will be called to delete AssignEIP resource. If controller
                 # instance is not present, then cloud formation will be stuck
                 # in deletion.So just pass in that case.
-                pass
         else:
-            return
+            try:
+                sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
+                print (sns_msg_event)
+            except (KeyError, IndexError, ValueError) as err:
+                raise AvxError("1.Could not parse SNS message %s" % str(err))
+            if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
+                print("Not from launch error. Exiting")
+                return
 
     if cf_request:
-        response_status = 'SUCCESS'
-        if event['RequestType'] == 'Create':
-            try:
-                set_environ(lambda_client, controller_instanceobj, context)
-                print("Environment variables have been set.")
-            except Exception as err:
-                response_status = 'FAILED'
-                print("Failed to setup environment variables %s" % str(err))
-
-            if response_status == 'SUCCESS' and\
-                    verify_credentials(controller_instanceobj) is True:
-                print("Verified AWS and controller Credentials")
-                print("Trying to setup HA")
-                try:
-                    setup_ha(client, controller_instanceobj, context)
-                except Exception as err:
-                    response_status = 'FAILED'
-                    print("Failed to setup HA %s" % str(err))
-            else:
-                response_status = 'FAILED'
-                print("Unable to verify AWS or S3 credentials. Exiting...")
-        elif event['RequestType'] == 'Delete':
-            try:
-                print("Trying to delete lambda created resources")
-                delete_resources(controller_instanceobj)
-            except Exception as err:
-                print("Failed to delete lambda created resources. %s" %
-                      str(err))
-                print("You'll have to manually delete Auto Scaling group,"
-                      " Launch Configuration, and SNS topic, all with"
-                      " name {}.".format(instance_name))
+        try:
+            response_status = handle_cloud_formation_request(
+                event, lambda_client, controller_instanceobj, context, instance_name)
+        except AvxError as err:
+            print (str(err))
+            response_status = 'FAILED'
+        except Exception:
+            print(traceback.format_exc())
+            response_status = 'FAILED'
 
         # Send response to CFT.
-        send_response(event, context, response_status, response_data)
+        if response_status not in ['SUCCESS', 'FAILED']:
+            response_status = 'FAILED'
+        send_response(event, context, response_status, {})
         print("Sent {} to CFT.".format(response_status))
     elif sns_event:
-        restore_backup(client, lambda_client, controller_instanceobj, context)
+        try:
+            sns_msg_json = json.loads(event["Records"][0]["Sns"]["Message"])
+            sns_msg_event = sns_msg_json['Event']
+            sns_msg_desc = sns_msg_json.get('Description', "")
+        except (KeyError, IndexError, ValueError) as err:
+            raise AvxError("2. Could not parse SNS message %s" % str(err))
+        print("SNS Event %s Description %s " % (sns_msg_event, sns_msg_desc))
+        if sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH":
+            print("Instance launched and sending email")
+            restore_backup(client, lambda_client, controller_instanceobj, context)
+        elif sns_msg_event == "autoscaling:TEST_NOTIFICATION":
+            print("Successfully received Test Event from ASG")
+        elif sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR" and "The security group"\
+                in sns_msg_desc and "does not exist in VPC" in sns_msg_desc:
+            print("Instance launch error, recreating with new security group configuration")
+            sg_id = create_new_sg(client)
+            ami_id = os.environ.get('AMI_ID')
+            inst_type = os.environ.get('INST_TYPE')
+            key_name = os.environ.get('KEY_NAME')
+            delete_resources(None, delete_sns=False, detach_instances=False)
+            setup_ha(ami_id, inst_type, None, key_name, [sg_id], context, attach_instance=False)
+
+
+def handle_cloud_formation_request(event, lambda_client, controller_instanceobj, context,
+                                   instance_name):
+    """Handle Requests from cloud formation"""
+    response_status = 'SUCCESS'
+    if event['RequestType'] == 'Create':
+        try:
+            set_environ(lambda_client, controller_instanceobj, context)
+            print("Environment variables have been set.")
+        except Exception as err:
+            response_status = 'FAILED'
+            print("Failed to setup environment variables %s" % str(err))
+
+        if response_status == 'SUCCESS' and \
+                verify_credentials(controller_instanceobj) is True:
+            print("Verified AWS and controller Credentials")
+            print("Trying to setup HA")
+            try:
+                ami_id = controller_instanceobj['ImageId']
+                inst_id = controller_instanceobj['InstanceId']
+                inst_type = controller_instanceobj['InstanceType']
+                key_name = controller_instanceobj['KeyName']
+                sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
+                setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
+            except Exception as err:
+                response_status = 'FAILED'
+                print("Failed to setup HA %s" % str(err))
+        else:
+            response_status = 'FAILED'
+            print("Unable to verify AWS or S3 credentials. Exiting...")
+    elif event['RequestType'] == 'Delete':
+        try:
+            print("Trying to delete lambda created resources")
+            inst_id = controller_instanceobj['InstanceId']
+            delete_resources(inst_id)
+        except Exception as err:
+            print("Failed to delete lambda created resources. %s" %
+                  str(err))
+            print("You'll have to manually delete Auto Scaling group,"
+                  " Launch Configuration, and SNS topic, all with"
+                  " name {}.".format(instance_name))
+            response_status = 'FAILED'
+    return response_status
+
+
+def create_new_sg(client):
+    """ Creates a new security group"""
+    instance_name = os.environ.get('AVIATRIX_TAG')
+    vpc_id = os.environ.get('VPC_ID')
+    try:
+        resp = client.create_security_group(Description='Aviatrix Controller',
+                                            GroupName=instance_name,
+                                            VpcId=vpc_id)
+        sg_id = resp['GroupId']
+    except (botocore.exceptions.ClientError, KeyError) as err:
+        if "InvalidGroup.Duplicate" in str(err):
+            rsp = client.describe_security_groups(GroupNames=[instance_name])
+            sg_id = rsp['SecurityGroups'][0]['GroupId']
+        else:
+            raise AvxError(str(err))
+    try:
+        client.authorize_security_group_ingress(
+            GroupId=sg_id,
+            IpPermissions=[
+                {'IpProtocol': 'tcp',
+                 'FromPort': 443,
+                 'ToPort': 443,
+                 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
+                {'IpProtocol': 'tcp',
+                 'FromPort': 80,
+                 'ToPort': 80,
+                 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+            ])
+    except botocore.exceptions.ClientError as err:
+        if "InvalidGroup.Duplicate" in str(err):
+            pass
+        else:
+            raise AvxError(str(err))
+    return sg_id
 
 
 def set_environ(lambda_client, controller_instanceobj, context,
@@ -142,21 +233,28 @@ def set_environ(lambda_client, controller_instanceobj, context,
             'NetworkInterfaces'][0]['Association'].get('PublicIp')
     else:
         eip = os.environ.get('EIP')
-    priv_ip = controller_instanceobj.get(
-        'NetworkInterfaces')[0].get('PrivateIpAddress')
+    ami_id = controller_instanceobj['ImageId']
+    vpc_id = controller_instanceobj['VpcId']
+    inst_type = controller_instanceobj['InstanceType']
+    keyname = controller_instanceobj['KeyName']
+    priv_ip = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
     lambda_client.update_function_configuration(
         FunctionName=context.function_name,
         Environment=
-        {'Variables':
-             {'EIP': eip,
-              'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-              'PRIV_IP': priv_ip,
-              'SUBNETLIST': os.environ.get('SUBNETLIST'),
-              'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
-              'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
-              'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
-              'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
-              'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')}})
+        {'Variables': {
+            'EIP': eip,
+            'AMI_ID': ami_id,
+            'VPC_ID': vpc_id,
+            'INST_TYPE': inst_type,
+            'KEY_NAME': keyname,
+            'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
+            'PRIV_IP': priv_ip,
+            'SUBNETLIST': os.environ.get('SUBNETLIST'),
+            'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
+            'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
+            'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
+            'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
+            'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')}})
 
 
 def login_to_controller(ip_addr, username, pwd):
@@ -361,33 +459,56 @@ def assign_eip(client, controller_instanceobj):
     print("Assigned elastic IP")
 
 
-def setup_ha(_client, controller_instanceobj, context):
+def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
+             attach_instance=True):
     """ Setup HA """
+    print ("HA config ami_id %s, inst_type %s, inst_id %s, key_name %s, sg_list %s, "
+           "attach_instance %s" % (ami_id, inst_type, inst_id, key_name, sg_list, attach_instance))
     lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
     # AMI_NAME = LC_NAME
     # ami_id = client.describe_images(
     #     Filters=[{'Name': 'name','Values':
     #  [AMI_NAME]}],Owners=['self'])['Images'][0]['ImageId']
-    ami_id = controller_instanceobj['ImageId']
     asg_client = boto3.client('autoscaling')
 
     asg_client.create_launch_configuration(
-        InstanceId=controller_instanceobj['InstanceId'],
         LaunchConfigurationName=lc_name,
-        ImageId=ami_id)
+        ImageId=ami_id,
+        InstanceType=inst_type,
+        SecurityGroups=sg_list,
+        KeyName=key_name,
+        AssociatePublicIpAddress=True)
+    tries = 0
+    while tries < 3:
+        try:
+            print ("Trying to create ASG")
+            asg_client.create_auto_scaling_group(
+                AutoScalingGroupName=asg_name,
+                LaunchConfigurationName=lc_name,
+                MinSize=0,
+                MaxSize=1,
+                DesiredCapacity=0 if attach_instance else 1,
+                VPCZoneIdentifier=os.environ.get('SUBNETLIST'),
+                Tags=[{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+            )
+        except botocore.exceptions.ClientError as err:
+            if "AlreadyExists" in str(err):
+                print("ASG already exists")
+                if "pending delete" in str(err):
+                    print("Pending delete. Trying again in 10 secs")
+                    time.sleep(10)
+            else:
+                raise
 
-    asg_client.create_auto_scaling_group(
-        AutoScalingGroupName=asg_name,
-        LaunchConfigurationName=lc_name,
-        MinSize=0,
-        MaxSize=1,
-        VPCZoneIdentifier=os.environ.get('SUBNETLIST'),
-        Tags=[{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
-    )
+        except Exception:
+            raise
+        else:
+            break
+
     print('Created ASG')
-    asg_client.attach_instances(InstanceIds=
-                                [controller_instanceobj['InstanceId']],
-                                AutoScalingGroupName=asg_name)
+    if attach_instance:
+        asg_client.attach_instances(InstanceIds=[inst_id],
+                                    AutoScalingGroupName=asg_name)
     sns_client = boto3.client('sns')
     sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
     print('Created SNS topic')
@@ -406,33 +527,37 @@ def setup_ha(_client, controller_instanceobj, context):
     print('SNS topic: Added lambda subscription.')
     asg_client.put_notification_configuration(
         AutoScalingGroupName=asg_name,
-        NotificationTypes=['autoscaling:EC2_INSTANCE_LAUNCH'],
+        NotificationTypes=['autoscaling:EC2_INSTANCE_LAUNCH',
+                           'autoscaling:EC2_INSTANCE_LAUNCH_ERROR'],
         TopicARN=sns_topic_arn)
     print('Attached ASG')
 
 
-def delete_resources(controller_instanceobj):
+def delete_resources(inst_id, delete_sns=True, detach_instances=True):
     """ Cloud formation cleanup"""
     lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
 
     asg_client = boto3.client('autoscaling')
-    try:
-        asg_client.detach_instances(
-            InstanceIds=[controller_instanceobj['InstanceId']],
-            AutoScalingGroupName=asg_name,
-            ShouldDecrementDesiredCapacity=True)
-        print("Controller instance detached from autoscaling group")
-    except Exception as err:
-        print(err)
+    if detach_instances:
+        try:
+            asg_client.detach_instances(
+                InstanceIds=[inst_id],
+                AutoScalingGroupName=asg_name,
+                ShouldDecrementDesiredCapacity=True)
+            print("Controller instance detached from autoscaling group")
+        except Exception as err:
+            print(err)
     asg_client.delete_auto_scaling_group(AutoScalingGroupName=asg_name,
                                          ForceDelete=True)
     print("Autoscaling group deleted")
     asg_client.delete_launch_configuration(LaunchConfigurationName=lc_name)
     print("Launch configuration deleted")
-    sns_client = boto3.client('sns')
-    sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
-    sns_client.delete_topic(TopicArn=sns_topic_arn)
-    print("SNS topic deleted")
+    if delete_sns:
+        print("Deleting SNS topic")
+        sns_client = boto3.client('sns')
+        sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
+        sns_client.delete_topic(TopicArn=sns_topic_arn)
+        print("SNS topic deleted")
 
 
 def send_response(event, context, response_status, reason=None,
