@@ -237,6 +237,7 @@ def set_environ(lambda_client, controller_instanceobj, context,
     vpc_id = controller_instanceobj['VpcId']
     inst_type = controller_instanceobj['InstanceType']
     keyname = controller_instanceobj['KeyName']
+    ctrl_subnet = controller_instanceobj['SubnetId']
     priv_ip = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
     lambda_client.update_function_configuration(
         FunctionName=context.function_name,
@@ -247,6 +248,7 @@ def set_environ(lambda_client, controller_instanceobj, context,
             'VPC_ID': vpc_id,
             'INST_TYPE': inst_type,
             'KEY_NAME': keyname,
+            'CTRL_SUBNET': ctrl_subnet,
             'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
             'PRIV_IP': priv_ip,
             'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -459,6 +461,33 @@ def assign_eip(client, controller_instanceobj):
     print("Assigned elastic IP")
 
 
+def validate_subnets(subnet_list):
+    """ Validates subnets"""
+    vpc_id = os.environ.get('VPC_ID')
+    if not vpc_id:
+        print("New creation. Assuming subnets are valid as selected from CFT")
+        return ",".join(subnet_list)
+    try:
+        client = boto3.client('ec2',
+                              region_name=os.environ["AWS_TEST_REGION"],
+                              aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
+                              aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"])
+        response = client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    except botocore.exceptions.ClientError as err:
+        raise AvxError(str(err))
+    sub_aws_list = [sub['SubnetId'] for sub in response['Subnets']]
+    sub_list_new = [sub for sub in subnet_list if sub in sub_aws_list]
+    if not sub_list_new:
+        ctrl_subnet = os.environ.get('CTRL_SUBNET')
+        if ctrl_subnet not in sub_aws_list:
+            raise AvxError("All subnets %s or controller subnet %s are not found in vpc %s")
+        else:
+            print ("All subnets are invalid. Using existing controller subnet")
+            return ctrl_subnet
+    else:
+        return ",".join(sub_list_new)
+
+
 def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
              attach_instance=True):
     """ Setup HA """
@@ -470,7 +499,9 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     #     Filters=[{'Name': 'name','Values':
     #  [AMI_NAME]}],Owners=['self'])['Images'][0]['ImageId']
     asg_client = boto3.client('autoscaling')
-
+    sub_list = os.environ.get('SUBNETLIST')
+    val_subnets = validate_subnets(sub_list.split(","))
+    print ("Valid subnets %s" % val_subnets)
     asg_client.create_launch_configuration(
         LaunchConfigurationName=lc_name,
         ImageId=ami_id,
@@ -488,7 +519,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                 MinSize=0,
                 MaxSize=1,
                 DesiredCapacity=0 if attach_instance else 1,
-                VPCZoneIdentifier=os.environ.get('SUBNETLIST'),
+                VPCZoneIdentifier=val_subnets,
                 Tags=[{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
             )
         except botocore.exceptions.ClientError as err:
