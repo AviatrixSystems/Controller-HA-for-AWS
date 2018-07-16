@@ -259,6 +259,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
         'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
         'TOPIC_ARN': os.environ.get('TOPIC_ARN'),
+        'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -729,7 +730,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
         else:
             for subscription in response.get('Subscriptions', []):
                 try:
-                    sns_client.unsubscribe(subscription.get('SubscriptionArn', ''))
+                    sns_client.unsubscribe(SubscriptionArn=subscription.get('SubscriptionArn', ''))
                 except botocore.exceptions.ClientError as err:
                     print(str(err))
             print("Deleted subscriptions")
