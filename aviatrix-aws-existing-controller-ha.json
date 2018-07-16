@@ -17,7 +17,7 @@
         },
         {
           "Label" : { "default":"Aviatrix Controller Backup Configuration" },
-          "Parameters" : [ "AviatrixTagParam", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "AviatrixUserParam", "AviatrixPassParam" ]
+          "Parameters" : [ "AviatrixTagParam", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "NotifEmailParam" ]
         }
       ],
       "ParameterLabels" :
@@ -29,8 +29,7 @@
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "AwsAccessKeyParam": { "default" : "Enter AWS Access Key with permission to access S3 bucket." },
          "AwsSecretKeyParam": { "default" : "Enter AWS Secret Key with permission to access S3 bucket." },
-         "AviatrixUserParam": { "default" : "Enter Aviatrix Cloud account username used for backup." },
-         "AviatrixPassParam": { "default" : "Enter Aviatrix Cloud account password used for backup." }
+         "NotifEmailParam": { "default" : "Enter an email to receive notifications for autoscaling group events" }
       }
     }
   },
@@ -72,16 +71,10 @@
         "Description": "Enter AWS Secret Key with permission to access S3 bucket.",
         "NoEcho": true
       },
-      "AviatrixUserParam":
+      "NotifEmailParam":
       {
         "Type": "String",
-        "Description": "Enter admin or an Aviatrix Cloud account username used for backup. This field in conjuction with password is used to login to the controller launched by autoscaling group and execute Aviatrix API to restore configuration file stored in S3."
-      },
-      "AviatrixPassParam":
-      {
-        "Type": "String",
-        "Description": "Enter admin's Password or an Aviatrix Cloud account password used for backup. This field in conjuction with username is used to login to the controller launched by autoscaling group and execute Aviatrix API to restore configuration file stored in S3. ",
-        "NoEcho": true
+        "Description": "Enter an email to receive notifications for autoscaling group events"
       }
   },
   "Resources" :
@@ -155,6 +148,8 @@
                         "sns:CreateTopic",
                         "sns:DeleteTopic",
                         "sns:Subscribe",
+                        "sns:Unsubscribe",
+                        "sns:ListSubscriptionsByTopic",
                         "ssm:SendCommand",
                         "ssm:ListCommandInvocations"
                     ],
@@ -177,8 +172,7 @@
               "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
               "AWS_ACCESS_KEY_BACK" : { "Ref" : "AwsAccessKeyParam" },
               "AWS_SECRET_KEY_BACK" : { "Ref" : "AwsSecretKeyParam" },
-              "AVIATRIX_USER_BACK" : { "Ref" : "AviatrixUserParam" },
-              "AVIATRIX_PASS_BACK" : { "Ref" : "AviatrixPassParam" }
+              "NOTIF_EMAIL" : { "Ref" : "NotifEmailParam" }
             }
           },
           "FunctionName" : { "Fn::Join" : [ "-", [ { "Ref" : "AviatrixTagParam" }, "ha" ] ] },

@@ -19,6 +19,7 @@ MAX_LOGIN_TIMEOUT = 300
 WAIT_DELAY = 30
 
 INITIAL_SETUP_WAIT = 180
+AMI_ID = 'https://s3-us-west-2.amazonaws.com/aviatrix-download/AMI_ID/ami_id.json'
 
 
 class AvxError(Exception):
@@ -92,7 +93,7 @@ def _lambda_handler(event, context):
             else:
                 print("Ignoring delete CFT for no Controller")
                 # While deleting cloud formation template, this lambda function
-                # will be called to delete AssignEIP resource. If controller
+                # will be called to delete AssignEIP resource. If the controller
                 # instance is not present, then cloud formation will be stuck
                 # in deletion.So just pass in that case.
         else:
@@ -108,7 +109,7 @@ def _lambda_handler(event, context):
     if cf_request:
         try:
             response_status = handle_cloud_formation_request(
-                event, lambda_client, controller_instanceobj, context, instance_name)
+                client, event, lambda_client, controller_instanceobj, context, instance_name)
         except AvxError as err:
             print (str(err))
             response_status = 'FAILED'
@@ -130,36 +131,39 @@ def _lambda_handler(event, context):
             raise AvxError("2. Could not parse SNS message %s" % str(err))
         print("SNS Event %s Description %s " % (sns_msg_event, sns_msg_desc))
         if sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH":
-            print("Instance launched and sending email")
+            print("Instance launched from Autoscaling")
             restore_backup(client, lambda_client, controller_instanceobj, context)
         elif sns_msg_event == "autoscaling:TEST_NOTIFICATION":
             print("Successfully received Test Event from ASG")
-        elif sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR" and "The security group"\
-                in sns_msg_desc and "does not exist in VPC" in sns_msg_desc:
+        elif sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
+            # and "The security group" in sns_msg_desc and "does not exist in VPC" in sns_msg_desc:
             print("Instance launch error, recreating with new security group configuration")
             sg_id = create_new_sg(client)
             ami_id = os.environ.get('AMI_ID')
             inst_type = os.environ.get('INST_TYPE')
             key_name = os.environ.get('KEY_NAME')
-            delete_resources(None, delete_sns=False, detach_instances=False)
+            delete_resources(None, detach_instances=False)
             setup_ha(ami_id, inst_type, None, key_name, [sg_id], context, attach_instance=False)
 
 
-def handle_cloud_formation_request(event, lambda_client, controller_instanceobj, context,
+def handle_cloud_formation_request(client, event, lambda_client, controller_instanceobj, context,
                                    instance_name):
     """Handle Requests from cloud formation"""
     response_status = 'SUCCESS'
     if event['RequestType'] == 'Create':
         try:
+            os.environ['TOPIC_ARN'] = 'N/A'
             set_environ(lambda_client, controller_instanceobj, context)
             print("Environment variables have been set.")
         except Exception as err:
             response_status = 'FAILED'
             print("Failed to setup environment variables %s" % str(err))
-
         if response_status == 'SUCCESS' and \
-                verify_credentials(controller_instanceobj) is True:
-            print("Verified AWS and controller Credentials")
+                verify_credentials(controller_instanceobj) is True and \
+                verify_backup_file(controller_instanceobj) is True and \
+                assign_eip(client, controller_instanceobj, None) is True and \
+                _check_ami_id(controller_instanceobj['ImageId']) is True:
+            print("Verified AWS and controller Credentials and backup file")
             print("Trying to setup HA")
             try:
                 ami_id = controller_instanceobj['ImageId']
@@ -187,6 +191,19 @@ def handle_cloud_formation_request(event, lambda_client, controller_instanceobj,
                   " name {}.".format(instance_name))
             response_status = 'FAILED'
     return response_status
+
+
+def _check_ami_id(ami_id):
+    """ Check if AMI is latest"""
+    print ("Verifying AMI ID")
+    resp = requests.get(AMI_ID)
+    ami_dict = json.loads(resp.content)
+    for image_type in ami_dict:
+        if ami_id in ami_dict[image_type].values():
+            print("AMI is valid")
+            return True
+    print("AMI is not latest. Cannot enable Controller HA")
+    return False
 
 
 def create_new_sg(client):
@@ -218,11 +235,39 @@ def create_new_sg(client):
                  'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
             ])
     except botocore.exceptions.ClientError as err:
-        if "InvalidGroup.Duplicate" in str(err):
+        if "InvalidGroup.Duplicate" in str(err) or "InvalidPermission.Duplicate"in str(err):
             pass
         else:
             raise AvxError(str(err))
     return sg_id
+
+
+def update_env_dict(lambda_client, context, replace_dict):
+    """ Update particular variables in the Environment variables in lambda"""
+    env_dict = {
+        'EIP': os.environ.get('EIP'),
+        'AMI_ID': os.environ.get('AMI_ID'),
+        'VPC_ID': os.environ.get('VPC_ID'),
+        'INST_TYPE': os.environ.get('INST_TYPE'),
+        'KEY_NAME': os.environ.get('KEY_NAME'),
+        'CTRL_SUBNET': os.environ.get('CTRL_SUBNET'),
+        'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
+        'PRIV_IP': os.environ.get('PRIV_IP'),
+        'INST_ID': os.environ.get('INST_ID'),
+        'SUBNETLIST': os.environ.get('SUBNETLIST'),
+        'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
+        'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
+        'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
+        'TOPIC_ARN': os.environ.get('TOPIC_ARN'),
+        # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
+        # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
+    }
+    env_dict.update(replace_dict)
+    os.environ.update(replace_dict)
+
+    lambda_client.update_function_configuration(FunctionName=context.function_name,
+                                                Environment={'Variables': env_dict})
+    print ("Updated environment dictionary")
 
 
 def set_environ(lambda_client, controller_instanceobj, context,
@@ -233,30 +278,38 @@ def set_environ(lambda_client, controller_instanceobj, context,
             'NetworkInterfaces'][0]['Association'].get('PublicIp')
     else:
         eip = os.environ.get('EIP')
+    sns_topic_arn = os.environ.get('TOPIC_ARN')
+    inst_id = controller_instanceobj['InstanceId']
     ami_id = controller_instanceobj['ImageId']
     vpc_id = controller_instanceobj['VpcId']
     inst_type = controller_instanceobj['InstanceType']
     keyname = controller_instanceobj['KeyName']
     ctrl_subnet = controller_instanceobj['SubnetId']
     priv_ip = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
-    lambda_client.update_function_configuration(
-        FunctionName=context.function_name,
-        Environment=
-        {'Variables': {
-            'EIP': eip,
-            'AMI_ID': ami_id,
-            'VPC_ID': vpc_id,
-            'INST_TYPE': inst_type,
-            'KEY_NAME': keyname,
-            'CTRL_SUBNET': ctrl_subnet,
-            'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-            'PRIV_IP': priv_ip,
-            'SUBNETLIST': os.environ.get('SUBNETLIST'),
-            'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
-            'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
-            'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
-            'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
-            'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK')}})
+
+    env_dict = {
+        'EIP': eip,
+        'AMI_ID': ami_id,
+        'VPC_ID': vpc_id,
+        'INST_TYPE': inst_type,
+        'KEY_NAME': keyname,
+        'CTRL_SUBNET': ctrl_subnet,
+        'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
+        'PRIV_IP': priv_ip,
+        'INST_ID': inst_id,
+        'SUBNETLIST': os.environ.get('SUBNETLIST'),
+        'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
+        'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
+        'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
+        'TOPIC_ARN': sns_topic_arn,
+        'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
+        # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
+        # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
+        }
+
+    lambda_client.update_function_configuration(FunctionName=context.function_name,
+                                                Environment={'Variables': env_dict})
+    os.environ.update(env_dict)
 
 
 def login_to_controller(ip_addr, username, pwd):
@@ -286,11 +339,10 @@ def verify_credentials(controller_instanceobj):
     """ Verify S3 and controller account credentials """
     print("Verifying Credentials")
     try:
-        s3_client = boto3.client(
-            's3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
-            aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
-        s3_client.get_bucket_location(
-            Bucket=os.environ.get('S3_BUCKET_BACK'))  # get_bucket_location
+        s3_client = boto3.client('s3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
+                                 aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
+        s3_client.get_bucket_location(Bucket=os.environ.get('S3_BUCKET_BACK'))
+
     except Exception as err:
         print("Either S3 credentials or S3 bucket used for backup is not "
               "valid. %s" % str(err))
@@ -300,8 +352,36 @@ def verify_credentials(controller_instanceobj):
         'NetworkInterfaces'][0]['Association'].get('PublicIp')
     print(eip)
 
-    login_to_controller(eip, os.environ.get('AVIATRIX_USER_BACK'),
-                        os.environ.get('AVIATRIX_PASS_BACK'))
+    # login_to_controller(eip, os.environ.get('AVIATRIX_USER_BACK'),
+    #                     os.environ.get('AVIATRIX_PASS_BACK'))
+    return True
+
+
+def verify_backup_file(controller_instanceobj):
+    """ Verify if s3 file exists"""
+    print("Verifying Backup file")
+    try:
+        s3c = boto3.client('s3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
+                           aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
+        priv_ip = controller_instanceobj['NetworkInterfaces'][0]['PrivateIpAddress']
+        version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
+        retrieve_controller_version(version_file)
+        s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
+        try:
+            with open('/tmp/tmp.enc', 'w') as data:
+                s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), s3_file, data)
+        except botocore.exceptions.ClientError as err:
+            if err.response['Error']['Code'] == "404":
+                print("The object %s does not exist." % s3_file)
+                return False
+            else:
+                print (str(err))
+                return False
+    except Exception as err:
+        print("Verify Backup failed %s" % str(err))
+        return False
+    else:
+        return True
     return True
 
 
@@ -342,7 +422,15 @@ def retrieve_controller_version(version_file):
 def run_initial_setup(ip_addr, cid, version):
     """ Boots the fresh controller to the specific version"""
     base_url = "https://" + ip_addr + "/v1/api"
-    # print(json.dumps(controller_instanceobj, indent=2))
+    post_data = {"CID": cid,
+                 "action": "initial_setup",
+                 "subaction": "check"}
+    print ("Checking initial setup")
+    response = requests.post(base_url, data=post_data, verify=False)
+    response_json = response.json()
+    if response_json.get('return') is True:
+        print("Initial setup is already done. Skipping")
+        return
     post_data = {"CID": cid,
                  "target_version": version,
                  "action": "initial_setup",
@@ -367,8 +455,12 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     2. Assign the EIP to the new controller
     2. Run initial setup to boot ot specific version parsed from backup
     3. Login again and restore the configuration """
-
-    assign_eip(client, controller_instanceobj)
+    inst_id = os.environ.get('INST_ID')
+    if inst_id == controller_instanceobj['InstanceId']:
+        print ("Controller is already saved. Not restoring")
+        return
+    if not assign_eip(client, controller_instanceobj, os.environ.get('EIP')):
+        raise AvxError("Could not assign EIP")
     eip = os.environ.get('EIP')
 
     new_private_ip = controller_instanceobj.get(
@@ -389,8 +481,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     if total_time == MAX_LOGIN_TIMEOUT:
         raise AvxError("Could not login to the controller")
 
-    priv_ip = os.environ.get('PRIV_IP')     # This private IP belongs to older
-                                            # terminated instance
+    priv_ip = os.environ.get('PRIV_IP')     # This private IP belongs to older terminated instance
 
     version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
     version = retrieve_controller_version(version_file)
@@ -407,10 +498,10 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
                     "action": "restore_cloudx_config",
                     "cloud_type": "1",
                     "access_key": os.environ.get('AWS_ACCESS_KEY_BACK'),
-                    "secret_key": os.environ.get('AWS_SECRET_KEY_BACK'),
                     "bucket_name": os.environ.get('S3_BUCKET_BACK'),
                     "file_name": s3_file}
     print("Trying to restore config with data %s\n" % str(restore_data))
+    restore_data["secret_key"] = os.environ.get('AWS_SECRET_KEY_BACK')
     base_url = "https://" + eip + "/v1/api"
 
     total_time = 0
@@ -451,23 +542,27 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     print("Restore failed, did not update lambda config")
 
 
-def assign_eip(client, controller_instanceobj):
+def assign_eip(client, controller_instanceobj, eip):
     """ Assign the EIP to the new instance"""
-    eip = os.environ.get('EIP')
-    eip_alloc_id = client.describe_addresses(
-        PublicIps=[eip]).get('Addresses')[0].get('AllocationId')
-    client.associate_address(AllocationId=eip_alloc_id,
-                             InstanceId=controller_instanceobj['InstanceId'])
-    print("Assigned elastic IP")
+    try:
+        if eip is None:
+            eip = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
+        eip_alloc_id = client.describe_addresses(
+            PublicIps=[eip]).get('Addresses')[0].get('AllocationId')
+        client.associate_address(AllocationId=eip_alloc_id,
+                                 InstanceId=controller_instanceobj['InstanceId'])
+    except Exception as err:
+        print("Failed in assigning EIP %s" % str(err))
+        return False
+    else:
+        print("Assigned/verified elastic IP")
+        return True
 
 
 def validate_keypair(key_name):
     """ Validates Keypairs"""
     try:
-        client = boto3.client('ec2',
-                              region_name=os.environ["AWS_TEST_REGION"],
-                              aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
-                              aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"])
+        client = boto3.client('ec2')
         response = client.describe_key_pairs()
     except botocore.exceptions.ClientError as err:
         raise AvxError(str(err))
@@ -475,10 +570,7 @@ def validate_keypair(key_name):
     if key_name not in key_aws_list:
         print ("Key does not exist. Creating")
         try:
-            client = boto3.client('ec2',
-                                  region_name=os.environ["AWS_TEST_REGION"],
-                                  aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
-                                  aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"])
+            client = boto3.client('ec2')
             client.create_key_pair(KeyName=key_name)
         except botocore.exceptions.ClientError as err:
             raise AvxError(str(err))
@@ -493,15 +585,12 @@ def validate_subnets(subnet_list):
         print("New creation. Assuming subnets are valid as selected from CFT")
         return ",".join(subnet_list)
     try:
-        client = boto3.client('ec2',
-                              region_name=os.environ["AWS_TEST_REGION"],
-                              aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
-                              aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"])
+        client = boto3.client('ec2')
         response = client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     except botocore.exceptions.ClientError as err:
         raise AvxError(str(err))
     sub_aws_list = [sub['SubnetId'] for sub in response['Subnets']]
-    sub_list_new = [sub for sub in subnet_list if sub in sub_aws_list]
+    sub_list_new = [sub for sub in subnet_list if sub.strip() in sub_aws_list]
     if not sub_list_new:
         ctrl_subnet = os.environ.get('CTRL_SUBNET')
         if ctrl_subnet not in sub_aws_list:
@@ -568,14 +657,22 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                                     AutoScalingGroupName=asg_name)
     sns_client = boto3.client('sns')
     sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
+    os.environ['TOPIC_ARN'] = sns_topic_arn
     print('Created SNS topic')
     lambda_client = boto3.client('lambda')
+    update_env_dict(lambda_client, context, {'TOPIC_ARN': sns_topic_arn})
     lambda_fn_arn = lambda_client.get_function(
         FunctionName=context.function_name).get('Configuration').get(
             'FunctionArn')
     sns_client.subscribe(TopicArn=sns_topic_arn,
                          Protocol='lambda',
                          Endpoint=lambda_fn_arn).get('SubscriptionArn')
+    try:
+        sns_client.subscribe(TopicArn=sns_topic_arn,
+                             Protocol='email',
+                             Endpoint=os.environ.get('NOTIF_EMAIL'))
+    except botocore.exceptions.ClientError as err:
+        print ("Could not add email notification %s" % str(err))
     lambda_client.add_permission(FunctionName=context.function_name,
                                  StatementId=str(uuid.uuid4()),
                                  Action='lambda:InvokeFunction',
@@ -592,7 +689,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
 
 def delete_resources(inst_id, delete_sns=True, detach_instances=True):
     """ Cloud formation cleanup"""
-    lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
+    lc_name = asg_name = os.environ.get('AVIATRIX_TAG')
 
     asg_client = boto3.client('autoscaling')
     if detach_instances:
@@ -602,19 +699,46 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
                 AutoScalingGroupName=asg_name,
                 ShouldDecrementDesiredCapacity=True)
             print("Controller instance detached from autoscaling group")
-        except Exception as err:
-            print(err)
-    asg_client.delete_auto_scaling_group(AutoScalingGroupName=asg_name,
-                                         ForceDelete=True)
+        except botocore.exceptions.ClientError as err:
+            print(str(err))
+    try:
+        asg_client.delete_auto_scaling_group(AutoScalingGroupName=asg_name,
+                                             ForceDelete=True)
+    except botocore.exceptions.ClientError as err:
+        if "AutoScalingGroup name not found" in str(err):
+            print('ASG already deleted')
+        else:
+            raise AvxError(str(err))
     print("Autoscaling group deleted")
-    asg_client.delete_launch_configuration(LaunchConfigurationName=lc_name)
+    try:
+        asg_client.delete_launch_configuration(LaunchConfigurationName=lc_name)
+    except botocore.exceptions.ClientError as err:
+        if "Launch configuration name not found" in str(err):
+            print('LC already deleted')
+        else:
+            print(str(err))
     print("Launch configuration deleted")
     if delete_sns:
         print("Deleting SNS topic")
         sns_client = boto3.client('sns')
-        sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
-        sns_client.delete_topic(TopicArn=sns_topic_arn)
-        print("SNS topic deleted")
+        try:
+            response = sns_client.list_subscriptions_by_topic(
+                TopicArn=os.environ.get('TOPIC_ARN'))
+        except botocore.exceptions.ClientError as err:
+            print('Could not delete topic due to %s' % str(err))
+        else:
+            for subscription in response.get('Subscriptions', []):
+                try:
+                    sns_client.unsubscribe(subscription.get('SubscriptionArn', ''))
+                except botocore.exceptions.ClientError as err:
+                    print(str(err))
+            print("Deleted subscriptions")
+        try:
+            sns_client.delete_topic(TopicArn=os.environ.get('TOPIC_ARN'))
+        except botocore.exceptions.ClientError as err:
+            print('Could not delete topic due to %s' % str(err))
+        else:
+            print("SNS topic deleted")
 
 
 def send_response(event, context, response_status, reason=None,
