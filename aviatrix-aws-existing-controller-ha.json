@@ -17,7 +17,7 @@
         },
         {
           "Label" : { "default":"Aviatrix Controller Backup Configuration" },
-          "Parameters" : [ "AviatrixTagParam", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "AviatrixUserParam", "AviatrixPassParam" ]
+          "Parameters" : [ "AviatrixTagParam", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "NotifEmailParam" ]
         }
       ],
       "ParameterLabels" :
@@ -29,8 +29,7 @@
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "AwsAccessKeyParam": { "default" : "Enter AWS Access Key with permission to access S3 bucket." },
          "AwsSecretKeyParam": { "default" : "Enter AWS Secret Key with permission to access S3 bucket." },
-         "AviatrixUserParam": { "default" : "Enter Aviatrix Cloud account username used for backup." },
-         "AviatrixPassParam": { "default" : "Enter Aviatrix Cloud account password used for backup." }
+         "NotifEmailParam": { "default" : "Enter an email to receive notifications for autoscaling group events" }
       }
     }
   },
@@ -49,7 +48,7 @@
       "AviatrixTagParam":
       {
         "Type": "String",
-        "Description": "Enter the existing controller instance name. Note this instance name must also match the AMI image name created for AWS auto scaling group."
+        "Description": "Enter the existing controller instance name. Note this instance name must also match the AMI image name created for AWS auto scaling group. It should contain only letters, numbers, hyphens, or underscores. No spaces allowed"
       },
       "S3BucketParam":
       {
@@ -72,16 +71,10 @@
         "Description": "Enter AWS Secret Key with permission to access S3 bucket.",
         "NoEcho": true
       },
-      "AviatrixUserParam":
+      "NotifEmailParam":
       {
         "Type": "String",
-        "Description": "Enter admin or an Aviatrix Cloud account username used for backup. This field in conjuction with password is used to login to the controller launched by autoscaling group and execute Aviatrix API to restore configuration file stored in S3."
-      },
-      "AviatrixPassParam":
-      {
-        "Type": "String",
-        "Description": "Enter admin's Password or an Aviatrix Cloud account password used for backup. This field in conjuction with username is used to login to the controller launched by autoscaling group and execute Aviatrix API to restore configuration file stored in S3. ",
-        "NoEcho": true
+        "Description": "Enter an email to receive notifications for autoscaling group events"
       }
   },
   "Resources" :
@@ -127,12 +120,19 @@
                     "Action": [
                         "ec2:DescribeInstances",
                         "ec2:DescribeAddresses",
+                        "ec2:LaunchInstances",
                         "ec2:AssociateAddress",
                         "ec2:DescribeImages",
                         "ec2:DeregisterImage",
                         "ec2:DescribeSnapshots",
                         "ec2:DeleteSnapshot",
                         "ec2:CreateImage",
+                        "ec2:CreateSecurityGroup",
+                        "ec2:AuthorizeSecurityGroupIngress",
+                        "ec2:DescribeSecurityGroups",
+                        "ec2:DescribeSubnets",
+                        "ec2:DescribeKeyPairs",
+                        "ec2:CreateKeyPair",
                         "lambda:UpdateFunctionConfiguration",
                         "lambda:GetFunction",
                         "lambda:AddPermission",
@@ -148,6 +148,8 @@
                         "sns:CreateTopic",
                         "sns:DeleteTopic",
                         "sns:Subscribe",
+                        "sns:Unsubscribe",
+                        "sns:ListSubscriptionsByTopic",
                         "ssm:SendCommand",
                         "ssm:ListCommandInvocations"
                     ],
@@ -170,15 +172,14 @@
               "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
               "AWS_ACCESS_KEY_BACK" : { "Ref" : "AwsAccessKeyParam" },
               "AWS_SECRET_KEY_BACK" : { "Ref" : "AwsSecretKeyParam" },
-              "AVIATRIX_USER_BACK" : { "Ref" : "AviatrixUserParam" },
-              "AVIATRIX_PASS_BACK" : { "Ref" : "AviatrixPassParam" }
+              "NOTIF_EMAIL" : { "Ref" : "NotifEmailParam" }
             }
           },
           "FunctionName" : { "Fn::Join" : [ "-", [ { "Ref" : "AviatrixTagParam" }, "ha" ] ] },
           "Handler" : "aviatrix_ha.lambda_handler",
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
           "Runtime" : "python2.7",
-          "Timeout" : "60",
+          "Timeout" : "300",
        }
     },
     "SetupHA": {
