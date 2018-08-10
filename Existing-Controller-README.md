@@ -36,7 +36,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 8. At the CloudFormation page, Select Create stack.
 
-9. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 2.
+9. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 5.
 
 10. Click next.
 
