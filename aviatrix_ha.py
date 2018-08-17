@@ -658,7 +658,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                                     "DeleteOnTermination": disk['DeleteOnTermination'],
                                     "Encrypted": disk["Encrypted"],
                                     "Iops": disk["Iops"]},
-                            'DeviceName': 'Disk'})
+                            'DeviceName': '/dev/sda1'})
         if not bld_map:
             print("bld map is empty")
             bld_map = None
