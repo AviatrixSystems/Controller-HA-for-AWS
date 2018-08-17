@@ -133,6 +133,7 @@
                         "ec2:DescribeSubnets",
                         "ec2:DescribeKeyPairs",
                         "ec2:CreateKeyPair",
+                        "ec2:DescribeVolumes",
                         "lambda:UpdateFunctionConfiguration",
                         "lambda:GetFunction",
                         "lambda:AddPermission",

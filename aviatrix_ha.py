@@ -36,7 +36,7 @@ def lambda_handler(event, context):
         _lambda_handler(event, context)
     except AvxError as err:
         print('Operation failed due to: ' + str(err))
-    except Exception as err:
+    except Exception as err:    # pylint: disable=broad-except
         print(str(traceback.format_exc()))
         print("Lambda function failed due to " + str(err))
 
@@ -113,7 +113,7 @@ def _lambda_handler(event, context):
         except AvxError as err:
             print (str(err))
             response_status = 'FAILED'
-        except Exception:
+        except Exception:       # pylint: disable=broad-except
             print(traceback.format_exc())
             response_status = 'FAILED'
 
@@ -153,7 +153,7 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
     if event['RequestType'] == 'Create':
         try:
             os.environ['TOPIC_ARN'] = 'N/A'
-            set_environ(lambda_client, controller_instanceobj, context)
+            set_environ(client, lambda_client, controller_instanceobj, context)
             print("Environment variables have been set.")
         except Exception as err:
             response_status = 'FAILED'
@@ -271,7 +271,7 @@ def update_env_dict(lambda_client, context, replace_dict):
     print ("Updated environment dictionary")
 
 
-def set_environ(lambda_client, controller_instanceobj, context,
+def set_environ(client, lambda_client, controller_instanceobj, context,
                 eip=None):
     """ Sets Environment variables """
     if eip is None:
@@ -287,6 +287,24 @@ def set_environ(lambda_client, controller_instanceobj, context,
     keyname = controller_instanceobj['KeyName']
     ctrl_subnet = controller_instanceobj['SubnetId']
     priv_ip = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
+    iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
+    mon_bool = controller_instanceobj.get('Monitoring', {}).get('State', 'disabled') != 'disabled'
+    monitoring = 'enabled' if mon_bool else 'disabled'
+    user_data = controller_instanceobj.get('UserData', '')
+    if not user_data:
+        user_data = ''
+    disks = []
+    for volume in controller_instanceobj.get('BlockDeviceMappings', {}):
+        ebs = volume.get('Ebs', {})
+        if ebs.get('Status', 'detached') == 'attached':
+            vol_id = ebs.get('VolumeId')
+            vol = client.describe_volumes(VolumeIds=[vol_id])['Volumes'][0]
+            disks.append({"VolumeId": vol_id,
+                          "DeleteOnTermination": ebs.get('DeleteOnTermination'),
+                          "VolumeType": vol["VolumeType"],
+                          "Size": vol["Size"],
+                          "Iops": vol["Iops"],
+                          "Encrypted": vol["Encrypted"]})
 
     env_dict = {
         'EIP': eip,
@@ -299,14 +317,20 @@ def set_environ(lambda_client, controller_instanceobj, context,
         'PRIV_IP': priv_ip,
         'INST_ID': inst_id,
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
-        'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
-        'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
         'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
         'TOPIC_ARN': sns_topic_arn,
         'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
+        'IAM_ARN': iam_arn,
+        'MONITORING': monitoring,
+        'DISKS': json.dumps(disks),
+        'USER_DATA': user_data,
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
         }
+    print ("Setting environment %s" % env_dict)
+
+    env_dict['AWS_ACCESS_KEY_BACK'] = os.environ.get('AWS_ACCESS_KEY_BACK')
+    env_dict['AWS_SECRET_KEY_BACK'] = os.environ.get('AWS_SECRET_KEY_BACK')
 
     lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                 Environment={'Variables': env_dict})
@@ -375,15 +399,13 @@ def verify_backup_file(controller_instanceobj):
             if err.response['Error']['Code'] == "404":
                 print("The object %s does not exist." % s3_file)
                 return False
-            else:
-                print (str(err))
-                return False
+            print (str(err))
+            return False
     except Exception as err:
         print("Verify Backup failed %s" % str(err))
         return False
     else:
         return True
-    return True
 
 
 def retrieve_controller_version(version_file):
@@ -521,7 +543,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
             # If restore succeeded, update private IP to that of the new
             #  instance now.
             print("Successfully restored backup. Updating lambda configuration")
-            set_environ(lambda_client, controller_instanceobj, context, eip)
+            set_environ(client, lambda_client, controller_instanceobj, context, eip)
             print("Updated lambda configuration")
             return
         elif response_json.get('reason', '') == 'valid action required':
@@ -618,13 +640,58 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     val_subnets = validate_subnets(sub_list.split(","))
     print ("Valid subnets %s" % val_subnets)
     validate_keypair(key_name)
-    asg_client.create_launch_configuration(
-        LaunchConfigurationName=lc_name,
-        ImageId=ami_id,
-        InstanceType=inst_type,
-        SecurityGroups=sg_list,
-        KeyName=key_name,
-        AssociatePublicIpAddress=True)
+    if inst_id:
+        print ("Setting launch config from instance")
+        asg_client.create_launch_configuration(
+            LaunchConfigurationName=lc_name,
+            ImageId=ami_id,
+            InstanceId=inst_id)
+    else:
+        print("Setting launch config from environment")
+        iam_arn = os.environ.get('IAM_ARN')
+        monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
+        disks = json.loads(os.environ.get('DISKS'))
+        user_data = json.loads(os.environ.get('USER_DATA'))
+        bld_map = []
+        if disks:
+            for disk in disks:
+                bld_map.append({"Ebs": {"VolumeSize": disk["Size"],
+                                        "VolumeType": disk['VolumeType'],
+                                        "DeleteOnTermination": disk['DeleteOnTermination'],
+                                        "Encrypted": disk["Encrypted"],
+                                        "Iops": disk["Iops"]},
+                                'DeviceName': 'Disk'})
+            if not bld_map:
+                print ("bld map is empty")
+                bld_map = None
+        # asg_client.create_launch_configuration(
+        #     LaunchConfigurationName=lc_name,
+        #     ImageId=ami_id,
+        #     InstanceType=inst_type,
+        #     SecurityGroups=sg_list,
+        #     KeyName=key_name,
+        #     AssociatePublicIpAddress=True,
+        #     IamInstanceProfile=iam_arn,
+        #     BlockDeviceMappings=bld_map,
+        #     InstanceMonitoring={"Enabled": monitoring},
+        #     UserData=user_data)
+        kw_args = {
+            "LaunchConfigurationName": lc_name,
+            "ImageId": ami_id,
+            "InstanceType": inst_type,
+            "SecurityGroups": sg_list,
+            "KeyName": key_name,
+            "AssociatePublicIpAddress": True,
+            "InstanceMonitoring": {"Enabled": monitoring},
+            "BlockDeviceMappings": bld_map,
+        }
+        if kw_args:
+            kw_args["UserData"] = user_data
+        if iam_arn:
+            kw_args["IamInstanceProfile"] = iam_arn,
+        # if bld_map:
+        #     args["BlockDeviceMappings"] = list(bld_map),
+        asg_client.create_launch_configuration(**kw_args)
     tries = 0
     while tries < 3:
         try:
