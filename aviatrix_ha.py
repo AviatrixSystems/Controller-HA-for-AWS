@@ -674,7 +674,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
         monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
-        user_data = json.loads(os.environ.get('USER_DATA'))
+        user_data = (os.environ.get('USER_DATA'))
 
         kw_args = {
             "LaunchConfigurationName": lc_name,
