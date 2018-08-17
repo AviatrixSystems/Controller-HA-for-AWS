@@ -133,6 +133,7 @@
                         "ec2:DescribeSubnets",
                         "ec2:DescribeKeyPairs",
                         "ec2:CreateKeyPair",
+                        "ec2:DescribeVolumes",
                         "lambda:UpdateFunctionConfiguration",
                         "lambda:GetFunction",
                         "lambda:AddPermission",
@@ -151,7 +152,8 @@
                         "sns:Unsubscribe",
                         "sns:ListSubscriptionsByTopic",
                         "ssm:SendCommand",
-                        "ssm:ListCommandInvocations"
+                        "ssm:ListCommandInvocations",
+                        "iam:PassRole"
                     ],
                     "Resource": "*"
                 }
@@ -179,7 +181,7 @@
           "Handler" : "aviatrix_ha.lambda_handler",
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
           "Runtime" : "python2.7",
-          "Timeout" : "300",
+          "Timeout" : "300"
        }
     },
     "SetupHA": {

@@ -36,7 +36,7 @@ def lambda_handler(event, context):
         _lambda_handler(event, context)
     except AvxError as err:
         print('Operation failed due to: ' + str(err))
-    except Exception as err:
+    except Exception as err:    # pylint: disable=broad-except
         print(str(traceback.format_exc()))
         print("Lambda function failed due to " + str(err))
 
@@ -87,7 +87,9 @@ def _lambda_handler(event, context):
         print("Can't find Controller instance with name tag %s. %s" %
               (instance_name, str(err)))
         if cf_request:
+            print("From CF Request")
             if event.get("RequestType", None) == 'Create':
+                print("Create Event")
                 send_response(event, context, 'Failed', {})
                 return
             else:
@@ -96,6 +98,7 @@ def _lambda_handler(event, context):
                 # will be called to delete AssignEIP resource. If the controller
                 # instance is not present, then cloud formation will be stuck
                 # in deletion.So just pass in that case.
+            return
         else:
             try:
                 sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
@@ -105,6 +108,7 @@ def _lambda_handler(event, context):
             if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
                 print("Not from launch error. Exiting")
                 return
+            print("From the instance launch error. Will attempt to re-create Auto scaling group")
 
     if cf_request:
         try:
@@ -113,7 +117,7 @@ def _lambda_handler(event, context):
         except AvxError as err:
             print (str(err))
             response_status = 'FAILED'
-        except Exception:
+        except Exception:       # pylint: disable=broad-except
             print(traceback.format_exc())
             response_status = 'FAILED'
 
@@ -153,7 +157,7 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
     if event['RequestType'] == 'Create':
         try:
             os.environ['TOPIC_ARN'] = 'N/A'
-            set_environ(lambda_client, controller_instanceobj, context)
+            set_environ(client, lambda_client, controller_instanceobj, context)
             print("Environment variables have been set.")
         except Exception as err:
             response_status = 'FAILED'
@@ -260,6 +264,10 @@ def update_env_dict(lambda_client, context, replace_dict):
         'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
         'TOPIC_ARN': os.environ.get('TOPIC_ARN'),
         'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
+        'IAM_ARN': os.environ.get('IAM_ARN'),
+        'MONITORING': os.environ.get('IAM_ARN'),
+        'DISKS': os.environ.get('DISKS'),
+        'USER_DATA': os.environ.get('USER_DATA'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -271,7 +279,7 @@ def update_env_dict(lambda_client, context, replace_dict):
     print ("Updated environment dictionary")
 
 
-def set_environ(lambda_client, controller_instanceobj, context,
+def set_environ(client, lambda_client, controller_instanceobj, context,
                 eip=None):
     """ Sets Environment variables """
     if eip is None:
@@ -287,6 +295,25 @@ def set_environ(lambda_client, controller_instanceobj, context,
     keyname = controller_instanceobj['KeyName']
     ctrl_subnet = controller_instanceobj['SubnetId']
     priv_ip = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
+    iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
+    mon_bool = controller_instanceobj.get('Monitoring', {}).get('State', 'disabled') != 'disabled'
+    monitoring = 'enabled' if mon_bool else 'disabled'
+    user_data = controller_instanceobj.get('UserData', '')
+    if not user_data:
+        user_data = ''
+    disks = []
+    for volume in controller_instanceobj.get('BlockDeviceMappings', {}):
+        ebs = volume.get('Ebs', {})
+        if ebs.get('Status', 'detached') == 'attached':
+            vol_id = ebs.get('VolumeId')
+            vol = client.describe_volumes(VolumeIds=[vol_id])['Volumes'][0]
+            disks.append({"VolumeId": vol_id,
+                          "DeleteOnTermination": ebs.get('DeleteOnTermination'),
+                          "VolumeType": vol["VolumeType"],
+                          "Size": vol["Size"],
+                          "Iops": vol["Iops"],
+                          "Encrypted": vol["Encrypted"],
+                         })
 
     env_dict = {
         'EIP': eip,
@@ -299,14 +326,20 @@ def set_environ(lambda_client, controller_instanceobj, context,
         'PRIV_IP': priv_ip,
         'INST_ID': inst_id,
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
-        'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
-        'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
         'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
         'TOPIC_ARN': sns_topic_arn,
         'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
+        'IAM_ARN': iam_arn,
+        'MONITORING': monitoring,
+        'DISKS': json.dumps(disks),
+        'USER_DATA': user_data,
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
         }
+    print ("Setting environment %s" % env_dict)
+
+    env_dict['AWS_ACCESS_KEY_BACK'] = os.environ.get('AWS_ACCESS_KEY_BACK')
+    env_dict['AWS_SECRET_KEY_BACK'] = os.environ.get('AWS_SECRET_KEY_BACK')
 
     lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                 Environment={'Variables': env_dict})
@@ -375,15 +408,13 @@ def verify_backup_file(controller_instanceobj):
             if err.response['Error']['Code'] == "404":
                 print("The object %s does not exist." % s3_file)
                 return False
-            else:
-                print (str(err))
-                return False
+            print (str(err))
+            return False
     except Exception as err:
         print("Verify Backup failed %s" % str(err))
         return False
     else:
         return True
-    return True
 
 
 def retrieve_controller_version(version_file):
@@ -521,7 +552,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
             # If restore succeeded, update private IP to that of the new
             #  instance now.
             print("Successfully restored backup. Updating lambda configuration")
-            set_environ(lambda_client, controller_instanceobj, context, eip)
+            set_environ(client, lambda_client, controller_instanceobj, context, eip)
             print("Updated lambda configuration")
             return
         elif response_json.get('reason', '') == 'valid action required':
@@ -545,14 +576,19 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
 
 def assign_eip(client, controller_instanceobj, eip):
     """ Assign the EIP to the new instance"""
+    cf_req = False
     try:
         if eip is None:
+            cf_req = True
             eip = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
         eip_alloc_id = client.describe_addresses(
             PublicIps=[eip]).get('Addresses')[0].get('AllocationId')
         client.associate_address(AllocationId=eip_alloc_id,
                                  InstanceId=controller_instanceobj['InstanceId'])
     except Exception as err:
+        if cf_req and "InvalidAddress.NotFound" in str(err):
+            print("EIP %s was not found. Please attach an EIP to the controller before" % eip)
+            return False
         print("Failed in assigning EIP %s" % str(err))
         return False
     else:
@@ -618,13 +654,53 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     val_subnets = validate_subnets(sub_list.split(","))
     print ("Valid subnets %s" % val_subnets)
     validate_keypair(key_name)
-    asg_client.create_launch_configuration(
-        LaunchConfigurationName=lc_name,
-        ImageId=ami_id,
-        InstanceType=inst_type,
-        SecurityGroups=sg_list,
-        KeyName=key_name,
-        AssociatePublicIpAddress=True)
+    bld_map = []
+    disks = json.loads(os.environ.get('DISKS'))
+    if disks:
+        for disk in disks:
+            bld_map.append({"Ebs": {"VolumeSize": disk["Size"],
+                                    "VolumeType": disk['VolumeType'],
+                                    "DeleteOnTermination": disk['DeleteOnTermination'],
+                                    # "Encrypted": disk["Encrypted"],  # Encrypted cannot be set
+                                    # since snapshot is specified
+                                    "Iops": disk["Iops"]},
+                            'DeviceName': '/dev/sda1'})
+        if not bld_map:
+            print("bld map is empty")
+            bld_map = None
+
+    if inst_id:
+        print ("Setting launch config from instance")
+        asg_client.create_launch_configuration(
+            LaunchConfigurationName=lc_name,
+            ImageId=ami_id,
+            InstanceId=inst_id,
+            BlockDeviceMappings=bld_map)
+    else:
+        print("Setting launch config from environment")
+        iam_arn = os.environ.get('IAM_ARN')
+        monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
+        user_data = (os.environ.get('USER_DATA'))
+
+        kw_args = {
+            "LaunchConfigurationName": lc_name,
+            "ImageId": ami_id,
+            "InstanceType": inst_type,
+            "SecurityGroups": sg_list,
+            "KeyName": key_name,
+            "AssociatePublicIpAddress": True,
+            "InstanceMonitoring": {"Enabled": monitoring},
+            "BlockDeviceMappings": bld_map,
+            "UserData": user_data,
+            "IamInstanceProfile": iam_arn,
+        }
+        if not user_data:
+            del kw_args["UserData"]
+        if not iam_arn:
+            del kw_args["IamInstanceProfile"]
+        if not bld_map:
+            del kw_args["BlockDeviceMappings"]
+        asg_client.create_launch_configuration(**kw_args)
     tries = 0
     while tries < 3:
         try:
@@ -659,7 +735,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     sns_client = boto3.client('sns')
     sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
     os.environ['TOPIC_ARN'] = sns_topic_arn
-    print('Created SNS topic')
+    print('Created SNS topic %s' % sns_topic_arn)
     lambda_client = boto3.client('lambda')
     update_env_dict(lambda_client, context, {'TOPIC_ARN': sns_topic_arn})
     lambda_fn_arn = lambda_client.get_function(
@@ -668,12 +744,15 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     sns_client.subscribe(TopicArn=sns_topic_arn,
                          Protocol='lambda',
                          Endpoint=lambda_fn_arn).get('SubscriptionArn')
-    try:
-        sns_client.subscribe(TopicArn=sns_topic_arn,
-                             Protocol='email',
-                             Endpoint=os.environ.get('NOTIF_EMAIL'))
-    except botocore.exceptions.ClientError as err:
-        print ("Could not add email notification %s" % str(err))
+    if os.environ.get('NOTIF_EMAIL'):
+        try:
+            sns_client.subscribe(TopicArn=sns_topic_arn,
+                                 Protocol='email',
+                                 Endpoint=os.environ.get('NOTIF_EMAIL'))
+        except botocore.exceptions.ClientError as err:
+            print ("Could not add email notification %s" % str(err))
+    else:
+        print ("Not adding email notification")
     lambda_client.add_permission(FunctionName=context.function_name,
                                  StatementId=str(uuid.uuid4()),
                                  Action='lambda:InvokeFunction',
