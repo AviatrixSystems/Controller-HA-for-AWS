@@ -26,7 +26,7 @@ This CloudFormation script will create the following:
 
 5. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Inside this directory, there will be a zipped file named `aviatrix_ha.zip`.
 
-6. Create an S3 bucket of nay name(for eg. aviatrix_lambda). Note down this bucket's name, this will be used later. Upload `aviatrix_ha.zip` to this S3 bucket.
+6. Create an S3 bucket . Note down this bucket's name (for eg. aviatrix_lambda), this will be used later to host the lambda script. Upload `aviatrix_ha.zip` to this S3 bucket.
 
 7. Go to AWS Console-> Services -> Management Tools-> CloudFormation.
 

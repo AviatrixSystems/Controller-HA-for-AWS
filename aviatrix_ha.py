@@ -571,14 +571,19 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
 
 def assign_eip(client, controller_instanceobj, eip):
     """ Assign the EIP to the new instance"""
+    cf_req = False
     try:
         if eip is None:
+            cf_req = True
             eip = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
         eip_alloc_id = client.describe_addresses(
             PublicIps=[eip]).get('Addresses')[0].get('AllocationId')
         client.associate_address(AllocationId=eip_alloc_id,
                                  InstanceId=controller_instanceobj['InstanceId'])
     except Exception as err:
+        if cf_req and "InvalidAddress.NotFound" in str(err):
+            print("EIP %s was not found. Please attach an EIP to the controller before" % eip)
+            return False
         print("Failed in assigning EIP %s" % str(err))
         return False
     else:
@@ -731,12 +736,15 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     sns_client.subscribe(TopicArn=sns_topic_arn,
                          Protocol='lambda',
                          Endpoint=lambda_fn_arn).get('SubscriptionArn')
-    try:
-        sns_client.subscribe(TopicArn=sns_topic_arn,
-                             Protocol='email',
-                             Endpoint=os.environ.get('NOTIF_EMAIL'))
-    except botocore.exceptions.ClientError as err:
-        print ("Could not add email notification %s" % str(err))
+    if os.environ.get('NOTIF_EMAIL'):
+        try:
+            sns_client.subscribe(TopicArn=sns_topic_arn,
+                                 Protocol='email',
+                                 Endpoint=os.environ.get('NOTIF_EMAIL'))
+        except botocore.exceptions.ClientError as err:
+            print ("Could not add email notification %s" % str(err))
+    else:
+        print ("Not adding email notification")
     lambda_client.add_permission(FunctionName=context.function_name,
                                  StatementId=str(uuid.uuid4()),
                                  Action='lambda:InvokeFunction',
