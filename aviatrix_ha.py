@@ -87,7 +87,9 @@ def _lambda_handler(event, context):
         print("Can't find Controller instance with name tag %s. %s" %
               (instance_name, str(err)))
         if cf_request:
+            print("From CF Request")
             if event.get("RequestType", None) == 'Create':
+                print("Create Event")
                 send_response(event, context, 'Failed', {})
                 return
             else:
@@ -96,6 +98,7 @@ def _lambda_handler(event, context):
                 # will be called to delete AssignEIP resource. If the controller
                 # instance is not present, then cloud formation will be stuck
                 # in deletion.So just pass in that case.
+            return
         else:
             try:
                 sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
@@ -105,6 +108,7 @@ def _lambda_handler(event, context):
             if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
                 print("Not from launch error. Exiting")
                 return
+            print("From the instance launch error. Will attempt to re-create Auto scaling group")
 
     if cf_request:
         try:
@@ -308,7 +312,8 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
                           "VolumeType": vol["VolumeType"],
                           "Size": vol["Size"],
                           "Iops": vol["Iops"],
-                          "Encrypted": vol["Encrypted"]})
+                          "Encrypted": vol["Encrypted"],
+                         })
 
     env_dict = {
         'EIP': eip,
@@ -656,7 +661,8 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             bld_map.append({"Ebs": {"VolumeSize": disk["Size"],
                                     "VolumeType": disk['VolumeType'],
                                     "DeleteOnTermination": disk['DeleteOnTermination'],
-                                    "Encrypted": disk["Encrypted"],
+                                    # "Encrypted": disk["Encrypted"],  # Encrypted cannot be set
+                                    # since snapshot is specified
                                     "Iops": disk["Iops"]},
                             'DeviceName': '/dev/sda1'})
         if not bld_map:
