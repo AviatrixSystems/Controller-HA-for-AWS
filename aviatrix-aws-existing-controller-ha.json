@@ -152,7 +152,8 @@
                         "sns:Unsubscribe",
                         "sns:ListSubscriptionsByTopic",
                         "ssm:SendCommand",
-                        "ssm:ListCommandInvocations"
+                        "ssm:ListCommandInvocations",
+                        "iam:PassRole"
                     ],
                     "Resource": "*"
                 }
