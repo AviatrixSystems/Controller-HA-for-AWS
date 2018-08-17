@@ -685,13 +685,15 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             "AssociatePublicIpAddress": True,
             "InstanceMonitoring": {"Enabled": monitoring},
             "BlockDeviceMappings": bld_map,
+            "UserData": user_data,
+            "IamInstanceProfile": iam_arn,
         }
-        if kw_args:
-            kw_args["UserData"] = user_data
-        if iam_arn:
-            kw_args["IamInstanceProfile"] = iam_arn,
-        # if bld_map:
-        #     args["BlockDeviceMappings"] = list(bld_map),
+        if not user_data:
+            del kw_args["UserData"]
+        if not iam_arn:
+            del kw_args["IamInstanceProfile"]
+        if not bld_map:
+            del kw_args["BlockDeviceMappings"]
         asg_client.create_launch_configuration(**kw_args)
     tries = 0
     while tries < 3:
