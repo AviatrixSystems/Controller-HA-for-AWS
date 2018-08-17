@@ -1,7 +1,7 @@
 ## Aviatrix - AWS CloudFormation template for HA on an Existing Aviatrix controller.
 
 ### Description
-This guide assumes you already have an Aviatrix Controller running and has been configured. If you don't, launch a controller through instructions available at https://docs.aviatrix.com/StartUpGuides/aviatrix-cloud-controller-startup-guide.html
+This guide assumes you already have an Aviatrix Controller running and has been configured. If you don't, launch a controller through instructions available at [Aviatrix Controller Startup Guide](https://docs.aviatrix.com/StartUpGuides/aviatrix-cloud-controller-startup-guide.html)
 
 This CloudFormation script will create the following:
 
@@ -18,6 +18,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
 * Existing controller's VPC should have one or more public subnets, preferrably in different AZs for HA across AZ. 
 * Existing controller version should be >= 3.4. if not, upgrade your controller to the latest
 * Existing controller must have backup and restore enabled
+* S3 bucket(s) to host the Lambda script and for the backup restore functionality
 
 ### Step by step Procedure:
 
@@ -37,7 +38,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 8. At the CloudFormation page, Select Create stack.
 
-9. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 5.
+9. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 5.  (You can also launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixController&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) )
 
 10. Click next.
 
