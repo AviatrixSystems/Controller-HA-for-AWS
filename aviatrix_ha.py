@@ -260,6 +260,10 @@ def update_env_dict(lambda_client, context, replace_dict):
         'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
         'TOPIC_ARN': os.environ.get('TOPIC_ARN'),
         'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
+        'IAM_ARN': os.environ.get('IAM_ARN'),
+        'MONITORING': os.environ.get('IAM_ARN'),
+        'DISKS': os.environ.get('DISKS'),
+        'USER_DATA': os.environ.get('USER_DATA'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -640,41 +644,33 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     val_subnets = validate_subnets(sub_list.split(","))
     print ("Valid subnets %s" % val_subnets)
     validate_keypair(key_name)
+    bld_map = []
+    disks = json.loads(os.environ.get('DISKS'))
+    if disks:
+        for disk in disks:
+            bld_map.append({"Ebs": {"VolumeSize": disk["Size"],
+                                    "VolumeType": disk['VolumeType'],
+                                    "DeleteOnTermination": disk['DeleteOnTermination'],
+                                    "Encrypted": disk["Encrypted"],
+                                    "Iops": disk["Iops"]},
+                            'DeviceName': 'Disk'})
+        if not bld_map:
+            print("bld map is empty")
+            bld_map = None
+
     if inst_id:
         print ("Setting launch config from instance")
         asg_client.create_launch_configuration(
             LaunchConfigurationName=lc_name,
             ImageId=ami_id,
-            InstanceId=inst_id)
+            InstanceId=inst_id,
+            BlockDeviceMappings=bld_map)
     else:
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
         monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
-        disks = json.loads(os.environ.get('DISKS'))
         user_data = json.loads(os.environ.get('USER_DATA'))
-        bld_map = []
-        if disks:
-            for disk in disks:
-                bld_map.append({"Ebs": {"VolumeSize": disk["Size"],
-                                        "VolumeType": disk['VolumeType'],
-                                        "DeleteOnTermination": disk['DeleteOnTermination'],
-                                        "Encrypted": disk["Encrypted"],
-                                        "Iops": disk["Iops"]},
-                                'DeviceName': 'Disk'})
-            if not bld_map:
-                print ("bld map is empty")
-                bld_map = None
-        # asg_client.create_launch_configuration(
-        #     LaunchConfigurationName=lc_name,
-        #     ImageId=ami_id,
-        #     InstanceType=inst_type,
-        #     SecurityGroups=sg_list,
-        #     KeyName=key_name,
-        #     AssociatePublicIpAddress=True,
-        #     IamInstanceProfile=iam_arn,
-        #     BlockDeviceMappings=bld_map,
-        #     InstanceMonitoring={"Enabled": monitoring},
-        #     UserData=user_data)
+
         kw_args = {
             "LaunchConfigurationName": lc_name,
             "ImageId": ami_id,
@@ -726,7 +722,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     sns_client = boto3.client('sns')
     sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
     os.environ['TOPIC_ARN'] = sns_topic_arn
-    print('Created SNS topic')
+    print('Created SNS topic %s' % sns_topic_arn)
     lambda_client = boto3.client('lambda')
     update_env_dict(lambda_client, context, {'TOPIC_ARN': sns_topic_arn})
     lambda_fn_arn = lambda_client.get_function(
