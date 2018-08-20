@@ -313,7 +313,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
                           "DeleteOnTermination": ebs.get('DeleteOnTermination'),
                           "VolumeType": vol["VolumeType"],
                           "Size": vol["Size"],
-                          "Iops": vol["Iops"],
+                          "Iops": vol.get("Iops", ""),
                           "Encrypted": vol["Encrypted"],
                          })
 
@@ -660,16 +660,20 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     disks = json.loads(os.environ.get('DISKS'))
     if disks:
         for disk in disks:
-            bld_map.append({"Ebs": {"VolumeSize": disk["Size"],
-                                    "VolumeType": disk['VolumeType'],
-                                    "DeleteOnTermination": disk['DeleteOnTermination'],
-                                    # "Encrypted": disk["Encrypted"],  # Encrypted cannot be set
-                                    # since snapshot is specified
-                                    "Iops": disk["Iops"]},
-                            'DeviceName': '/dev/sda1'})
-        if not bld_map:
-            print("bld map is empty")
-            bld_map = None
+            disk_config = {"Ebs": {"VolumeSize": disk["Size"],
+                                   "VolumeType": disk['VolumeType'],
+                                   "DeleteOnTermination": disk['DeleteOnTermination'],
+                                   # "Encrypted": disk["Encrypted"],  # Encrypted cannot be set
+                                   #  since snapshot is specified
+                                   "Iops": disk("Iops", ''),
+                                   'DeviceName': '/dev/sda1'}}
+            if not disk_config["Ebs"]["Iops"]:
+                del disk_config["Ebs"]["Iops"]
+            bld_map.append(disk_config)
+
+    if not bld_map:
+        print("bld map is empty")
+        bld_map = None
 
     if inst_id:
         print ("Setting launch config from instance")
