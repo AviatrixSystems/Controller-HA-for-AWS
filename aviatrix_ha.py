@@ -174,10 +174,8 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
                 inst_id = controller_instanceobj['InstanceId']
                 inst_type = controller_instanceobj['InstanceType']
                 key_name = controller_instanceobj['KeyName']
-                # sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
-                sg_id = create_new_sg(client)
-
-                setup_ha(ami_id, inst_type, inst_id, key_name, [sg_id], context)
+                sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
+                setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
             except Exception as err:
                 response_status = 'FAILED'
                 print("Failed to setup HA %s" % str(err))
@@ -673,7 +671,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
 
     if not bld_map:
         print("bld map is empty")
-        bld_map = None
+        raise AvxError("Could not find any disks attached to the controller")
 
     if inst_id:
         print ("Setting launch config from instance")
@@ -681,8 +679,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             LaunchConfigurationName=lc_name,
             ImageId=ami_id,
             InstanceId=inst_id,
-            BlockDeviceMappings=bld_map,
-            SecurityGroups=sg_list)
+            BlockDeviceMappings=bld_map)
     else:
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
