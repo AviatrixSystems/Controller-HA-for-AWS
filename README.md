@@ -5,7 +5,7 @@ This guide assumes you already have an Aviatrix Controller running and has been 
 
 This CloudFormation script will create the following:
 
-* An Aviatrix Autoscaling group with size 1.
+* An Aviatrix Autoscaling group with size 1 with a new security group
 * An SNS topic with same name as of existing controller instance.
 * An email subscription to the SNS topic(optional)
 * A lambda function for setting up HA and restoring configuration automatically.
@@ -34,31 +34,29 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 6. Create an S3 bucket of any name(for eg. aviatrix_lambda). Upload `aviatrix_ha.zip` to this S3 bucket. Note down this bucket's name, this will be used later while setting up CloudFormation template.
 
-7. Go to AWS Console-> Services -> Management Tools-> CloudFormation.
+7. You can also launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixController&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) 
 
-8. At the CloudFormation page, Select Create stack.
+(Alternately, at the CloudFormation page(AWS Console-> Services -> Management Tools-> CloudFormation), select Create stack. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 5. )
 
-9. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 5.  (You can also launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixController&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) )
+8. Click next.
 
-10. Click next.
+9. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHa`
 
-11. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHa`
+10. Enter the parameters. Read the descriptions and instructions carefully. Click next.
 
-12. Enter the parameters. Read the descriptions and instructions carefully. Click next.
+11. Specify your options/tags/permissions as per your policies, when in doubt just click next.
 
-13. Specify your options/tags/permissions as per your policies, when in doubt just click next.
-
-14. On the review page, scroll to the bottom and check the button that reads:
+12. On the review page, scroll to the bottom and check the button that reads:
 `I acknowledge that AWS CloudFormation might create IAM resources with custom names.`
 
-15. Click on Create.
+13. Click on Create.
 
-16. Wait for status to change to `CREATE_COMPLETE`. If fails or rolls back, you can see the error message in the Cloudwatch logs.
+14. Wait for status to change to `CREATE_COMPLETE`. If fails or rolls back, you can see the error message in the Cloudwatch logs.
 
-17. If you provided an email to subscribe to SNS events, you will need to confirm the subscription in your email
+15. If you provided an email to subscribe to SNS events, you will need to confirm the subscription in your email
 
-18. You are encouraged to test the functionality before deploying in production. This can be done by shutting down the controller from the AWS EC2 console. This would trigger the Autoscaling and the HA switchover. Ensure that the new controller has the correct configuration.
+16. You are encouraged to test the functionality before deploying in production. This can be done by shutting down the controller from the AWS EC2 console. This would trigger the Autoscaling and the HA switchover. Ensure that the new controller has the correct configuration.
 
-19. If you see any issues, report them in this github
+17. If you see any issues, report them in this github
 
-20. Enjoy! You are welcome!
+18. Enjoy! You are welcome!
