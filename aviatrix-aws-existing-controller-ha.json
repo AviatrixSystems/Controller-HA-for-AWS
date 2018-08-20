@@ -129,6 +129,7 @@
                         "ec2:CreateImage",
                         "ec2:CreateSecurityGroup",
                         "ec2:AuthorizeSecurityGroupIngress",
+                        "ec2:RevokeSecurityGroupIngress",
                         "ec2:DescribeSecurityGroups",
                         "ec2:DescribeSubnets",
                         "ec2:DescribeKeyPairs",
