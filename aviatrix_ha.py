@@ -665,8 +665,8 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                                    "DeleteOnTermination": disk['DeleteOnTermination'],
                                    # "Encrypted": disk["Encrypted"],  # Encrypted cannot be set
                                    #  since snapshot is specified
-                                   "Iops": disk("Iops", ''),
-                                   'DeviceName': '/dev/sda1'}}
+                                   "Iops": disk.get("Iops", '')},
+                           'DeviceName': '/dev/sda1'}
             if not disk_config["Ebs"]["Iops"]:
                 del disk_config["Ebs"]["Iops"]
             bld_map.append(disk_config)
@@ -808,9 +808,13 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
     if delete_sns:
         print("Deleting SNS topic")
         sns_client = boto3.client('sns')
+        topic_arn = os.environ.get('TOPIC_ARN')
+        if topic_arn == "N/A":
+            print ("Topic not created. Exiting")
+            return
         try:
             response = sns_client.list_subscriptions_by_topic(
-                TopicArn=os.environ.get('TOPIC_ARN'))
+                )
         except botocore.exceptions.ClientError as err:
             print('Could not delete topic due to %s' % str(err))
         else:
