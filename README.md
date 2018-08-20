@@ -34,27 +34,25 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 6. Create an S3 bucket of any name(for eg. aviatrix_lambda). Upload `aviatrix_ha.zip` to this S3 bucket. Note down this bucket's name, this will be used later while setting up CloudFormation template.
 
-7. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixController&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) 
+7. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) 
 
-8. Click next.
+8. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHA`
 
-9. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHa`
+9. Enter the parameters. Read the descriptions and instructions carefully. Click next.
 
-10. Enter the parameters. Read the descriptions and instructions carefully. Click next.
+10. Specify your options/tags/permissions as per your policies, when in doubt just click next.
 
-11. Specify your options/tags/permissions as per your policies, when in doubt just click next.
-
-12. On the review page, scroll to the bottom and check the button that reads:
+11. On the review page, scroll to the bottom and check the button that reads:
 `I acknowledge that AWS CloudFormation might create IAM resources with custom names.`
 
-13. Click on Create.
+12. Click on Create.
 
-14. Wait for status to change to `CREATE_COMPLETE`. If fails or rolls back, you can see the error message in the Cloudwatch logs.
+13. Wait for status to change to `CREATE_COMPLETE`. If fails or rolls back, you can see the error message in the Cloudwatch logs.
 
-15. If you provided an email to subscribe to SNS events, you will need to confirm the subscription in your email
+14. If you provided an email to subscribe to SNS events, you will need to confirm the subscription in your email
 
-16. You are encouraged to test the functionality before deploying in production. This can be done by shutting down the controller from the AWS EC2 console. This would trigger the Autoscaling and the HA switchover. Ensure that the new controller has the correct configuration.
+15. You are encouraged to test the functionality before deploying in production. This can be done by shutting down the controller from the AWS EC2 console. This would trigger the Autoscaling and the HA switchover. Ensure that the new controller has the correct configuration.
 
-17. If you see any issues, report them in this github
+16. If you see any issues, report them in this github
 
-18. Enjoy! You are welcome!
+17. Enjoy! You are welcome!
