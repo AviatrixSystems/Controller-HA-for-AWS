@@ -853,7 +853,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
             print ("Topic not created. Exiting")
             return
         try:
-            response = sns_client.list_subscriptions_by_topic(topic_arn)
+            response = sns_client.list_subscriptions_by_topic(TopicArn=topic_arn)
         except botocore.exceptions.ClientError as err:
             print('Could not delete topic due to %s' % str(err))
         else:
