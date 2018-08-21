@@ -12,10 +12,6 @@
           "Parameters" : [ "VPCParam", "SubnetParam" ]
         },
         {
-          "Label" : { "default":"Lambda function Configuration" },
-          "Parameters" : [ "S3BucketParam" ]
-        },
-        {
           "Label" : { "default":"Aviatrix Controller Backup Configuration" },
           "Parameters" : [ "AviatrixTagParam", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "NotifEmailParam" ]
         }
@@ -25,7 +21,6 @@
          "VPCParam" : { "default" : "Enter VPC of existing controller instance." },
          "SubnetParam" : { "default" : "Enter one or more subnets in different Availability zones within that VPC." },
          "AviatrixTagParam": { "default" : "Enter Name tag of the existing Aviatrix Controller instance." },
-         "S3BucketParam": { "default" : "Enter S3 Bucket name which has aviatrix_ha.zip file." },
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "AwsAccessKeyParam": { "default" : "Enter AWS Access Key with permission to access S3 bucket." },
          "AwsSecretKeyParam": { "default" : "Enter AWS Secret Key with permission to access S3 bucket." },
@@ -48,12 +43,7 @@
       "AviatrixTagParam":
       {
         "Type": "String",
-        "Description": "Enter the existing controller instance name. Note this instance name must also match the AMI image name created for AWS auto scaling group. It should contain only letters, numbers, hyphens, or underscores. No spaces allowed"
-      },
-      "S3BucketParam":
-      {
-        "Type": "String",
-        "Description": "Enter S3 Bucket name which has aviatrix_ha.zip file."
+        "Description": "Enter the existing controller instance name. It should contain only letters, numbers, hyphens, or underscores. No spaces allowed"
       },
       "S3BucketBackupParam":
       {
@@ -167,7 +157,7 @@
     "AviatrixLambda" : {
        "Type" : "AWS::Lambda::Function",
        "Properties" : {
-          "Code" : {"S3Bucket" : { "Ref" : "S3BucketParam" }, "S3Key" : "aviatrix_ha.zip"},
+          "Code" : {"S3Bucket" : { "Fn::Join" : [ "-", [ "aviatrix-lambda", { "Ref" : "AWS::Region"}]]}, "S3Key" : "aviatrix_ha.zip"},
           "Environment" : {
             "Variables": { 
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
