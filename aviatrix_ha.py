@@ -90,7 +90,7 @@ def _lambda_handler(event, context):
             print("From CF Request")
             if event.get("RequestType", None) == 'Create':
                 print("Create Event")
-                send_response(event, context, 'Failed', {})
+                send_response(event, context, 'FAILED', {})
                 return
             else:
                 print("Ignoring delete CFT for no Controller")
