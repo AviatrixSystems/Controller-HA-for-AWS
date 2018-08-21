@@ -90,7 +90,7 @@ def _lambda_handler(event, context):
             print("From CF Request")
             if event.get("RequestType", None) == 'Create':
                 print("Create Event")
-                send_response(event, context, 'Failed', {})
+                send_response(event, context, 'FAILED', {})
                 return
             else:
                 print("Ignoring delete CFT for no Controller")
@@ -311,7 +311,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
                           "DeleteOnTermination": ebs.get('DeleteOnTermination'),
                           "VolumeType": vol["VolumeType"],
                           "Size": vol["Size"],
-                          "Iops": vol["Iops"],
+                          "Iops": vol.get("Iops", ""),
                           "Encrypted": vol["Encrypted"],
                          })
 
@@ -481,6 +481,43 @@ def run_initial_setup(ip_addr, cid, version):
                        "specific version")
 
 
+def temp_add_security_group_access(client, controller_instanceobj):
+    """ Temporarilty add 0.0.0.0/0 rule in one security group"""
+    sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
+    if not sgs:
+        raise AvxError("No security groups were attached to controller")
+    try:
+        client.authorize_security_group_ingress(
+            GroupId=sgs[0],
+            IpPermissions=[{'IpProtocol': 'tcp',
+                            'FromPort': 443,
+                            'ToPort': 443,
+                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+                          ])
+    except botocore.exceptions.ClientError as err:
+        if "InvalidPermission.Duplicate" in str(err):
+            return True, sgs[0]
+        else:
+            print(str(err))
+            raise
+    return False, sgs[0]
+
+
+def restore_security_group_access(client, sg_id):
+    """ Remove 0.0.0.0/0 rule in previously added security group"""
+    try:
+        client.revoke_security_group_ingress(
+            GroupId=sg_id,
+            IpPermissions=[{'IpProtocol': 'tcp',
+                            'FromPort': 443,
+                            'ToPort': 443,
+                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+                          ])
+    except botocore.exceptions.ClientError as err:
+        if "InvalidPermission.NotFound" not in str(err):
+            print(str(err))
+
+
 def restore_backup(client, lambda_client, controller_instanceobj, context):
     """ Restores the backup by doing the following
     1. Login to new controller
@@ -499,6 +536,8 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
         'NetworkInterfaces')[0].get('PrivateIpAddress')
     print("New Private IP " + str(new_private_ip))
 
+    duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj)
+    print("Duplicate %s Modified Security group %s " % (duplicate, sg_modified))
     total_time = 0
     while total_time <= MAX_LOGIN_TIMEOUT:
         try:
@@ -554,6 +593,10 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
             print("Successfully restored backup. Updating lambda configuration")
             set_environ(client, lambda_client, controller_instanceobj, context, eip)
             print("Updated lambda configuration")
+            if not duplicate:
+                print("Reverting sg %s" % sg_modified)
+                restore_security_group_access(client, sg_modified)
+            print("Controller HA event has been successfully handled")
             return
         elif response_json.get('reason', '') == 'valid action required':
             print("API is not ready yet")
@@ -658,16 +701,20 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     disks = json.loads(os.environ.get('DISKS'))
     if disks:
         for disk in disks:
-            bld_map.append({"Ebs": {"VolumeSize": disk["Size"],
-                                    "VolumeType": disk['VolumeType'],
-                                    "DeleteOnTermination": disk['DeleteOnTermination'],
-                                    # "Encrypted": disk["Encrypted"],  # Encrypted cannot be set
-                                    # since snapshot is specified
-                                    "Iops": disk["Iops"]},
-                            'DeviceName': '/dev/sda1'})
-        if not bld_map:
-            print("bld map is empty")
-            bld_map = None
+            disk_config = {"Ebs": {"VolumeSize": disk["Size"],
+                                   "VolumeType": disk['VolumeType'],
+                                   "DeleteOnTermination": disk['DeleteOnTermination'],
+                                   # "Encrypted": disk["Encrypted"],  # Encrypted cannot be set
+                                   #  since snapshot is specified
+                                   "Iops": disk.get("Iops", '')},
+                           'DeviceName': '/dev/sda1'}
+            if not disk_config["Ebs"]["Iops"]:
+                del disk_config["Ebs"]["Iops"]
+            bld_map.append(disk_config)
+
+    if not bld_map:
+        print("bld map is empty")
+        raise AvxError("Could not find any disks attached to the controller")
 
     if inst_id:
         print ("Setting launch config from instance")
@@ -801,9 +848,12 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
     if delete_sns:
         print("Deleting SNS topic")
         sns_client = boto3.client('sns')
+        topic_arn = os.environ.get('TOPIC_ARN')
+        if topic_arn == "N/A":
+            print ("Topic not created. Exiting")
+            return
         try:
-            response = sns_client.list_subscriptions_by_topic(
-                TopicArn=os.environ.get('TOPIC_ARN'))
+            response = sns_client.list_subscriptions_by_topic(TopicArn=topic_arn)
         except botocore.exceptions.ClientError as err:
             print('Could not delete topic due to %s' % str(err))
         else:
@@ -814,7 +864,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
                     print(str(err))
             print("Deleted subscriptions")
         try:
-            sns_client.delete_topic(TopicArn=os.environ.get('TOPIC_ARN'))
+            sns_client.delete_topic(TopicArn=topic_arn)
         except botocore.exceptions.ClientError as err:
             print('Could not delete topic due to %s' % str(err))
         else:

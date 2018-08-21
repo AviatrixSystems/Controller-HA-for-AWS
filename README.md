@@ -5,7 +5,7 @@ This guide assumes you already have an Aviatrix Controller running and has been 
 
 This CloudFormation script will create the following:
 
-* An Aviatrix Autoscaling group with size 1.
+* An Aviatrix Autoscaling group with size 1 with a new security group
 * An SNS topic with same name as of existing controller instance.
 * An email subscription to the SNS topic(optional)
 * A lambda function for setting up HA and restoring configuration automatically.
@@ -28,37 +28,25 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 3. Do a "Backup Now" from  the Settings->Maintence->Backup restore page
 
-4. Download this repository as zip file, by clicking on top right green button named `Clone or download`, and then click on `Download ZIP`.
+4. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) 
 
-5. Extract the downloaded zipped file on your local system. You will get a directory named `Controller-HA-for-AWS-master`. Inside this directory, there will be a zipped file named `aviatrix_ha.zip`.
+5. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHA`
 
-6. Create an S3 bucket of any name(for eg. aviatrix_lambda). Upload `aviatrix_ha.zip` to this S3 bucket. Note down this bucket's name, this will be used later while setting up CloudFormation template.
+6. Enter the parameters. Read the descriptions and instructions carefully. Click next.
 
-7. Go to AWS Console-> Services -> Management Tools-> CloudFormation.
+7. Specify your options/tags/permissions as per your policies, when in doubt just click next.
 
-8. At the CloudFormation page, Select Create stack.
-
-9. On the next screen, Select `Upload a template to Amazon S3`. Click on `Choose file`, and then select `aviatrix-aws-existing-controller-ha.json` from directory `Controller-HA-for-AWS-master` created in Step 5.  (You can also launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixController&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) )
-
-10. Click next.
-
-11. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHa`
-
-12. Enter the parameters. Read the descriptions and instructions carefully. Click next.
-
-13. Specify your options/tags/permissions as per your policies, when in doubt just click next.
-
-14. On the review page, scroll to the bottom and check the button that reads:
+8. On the review page, scroll to the bottom and check the button that reads:
 `I acknowledge that AWS CloudFormation might create IAM resources with custom names.`
 
-15. Click on Create.
+9. Click on Create.
 
-16. Wait for status to change to `CREATE_COMPLETE`. If fails or rolls back, you can see the error message in the Cloudwatch logs.
+10. Wait for status to change to `CREATE_COMPLETE`. If fails or rolls back, you can see the error message in the Cloudwatch logs.
 
-17. If you provided an email to subscribe to SNS events, you will need to confirm the subscription in your email
+11. If you provided an email to subscribe to SNS events, you will need to confirm the subscription in your email
 
-18. You are encouraged to test the functionality before deploying in production. This can be done by shutting down the controller from the AWS EC2 console. This would trigger the Autoscaling and the HA switchover. Ensure that the new controller has the correct configuration.
+12. You are encouraged to test the functionality before deploying in production. This can be done by shutting down the controller from the AWS EC2 console. This would trigger the Autoscaling and the HA switchover. Ensure that the new controller has the correct configuration.
 
-19. If you see any issues, report them in this github
+13. If you see any issues, report them in this github
 
-20. Enjoy! You are welcome!
+14. Enjoy! You are welcome!
