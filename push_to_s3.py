@@ -5,16 +5,19 @@ from __future__ import print_function
 from botocore.exceptions import ClientError
 import boto3
 import os
+import sys
 import traceback
 
 try:
     ACCESS_KEY = os.environ['ACCESS_KEY']
     SECRET_KEY = os.environ['SECRET_KEY']
 except KeyError:
-    print("use as ACCESS_KEY=xxxx SECRET_KEY=yyyy python push_to_s3.py")
+    raise Exception("use as ACCESS_KEY=xxxx SECRET_KEY=yyyy python push_to_s3.py."
+                    " For dev add --dev")
 
 BUCKET_PREFIX = "aviatrix-lambda-"
 LAMBDA_ZIP_FILE = 'aviatrix_ha.zip'
+LAMBDA_ZIP_DEV_FILE = 'aviatrix_ha_dev.zip'
 
 CFT_BUCKET_NAME = "aviatrix-cloudformation-templates"
 CFT_BUCKET_REGION = "us-west-2"
@@ -59,8 +62,16 @@ def push_lambda_file_s3():
         #     else:
         #         print traceback.format_exc()
 
+        dst_file = LAMBDA_ZIP_FILE
         try:
-            s3_.upload_file(LAMBDA_ZIP_FILE, bucket_name, LAMBDA_ZIP_FILE,
+            if sys.argv[1] == "--dev":
+                print ("Pushing to dev bucket")
+                dst_file = LAMBDA_ZIP_DEV_FILE
+        except IndexError:
+            pass
+
+        try:
+            s3_.upload_file(LAMBDA_ZIP_FILE, bucket_name, dst_file,
                             ExtraArgs={'ACL': 'public-read'})
         except ClientError:
             print (traceback.format_exc())
