@@ -15,7 +15,7 @@ import botocore
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
-MAX_LOGIN_TIMEOUT = 300
+MAX_LOGIN_TIMEOUT = 240
 WAIT_DELAY = 30
 
 INITIAL_SETUP_WAIT = 180
@@ -537,84 +537,86 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     print("New Private IP " + str(new_private_ip))
 
     duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj)
-    print("Duplicate %s Modified Security group %s " % (duplicate, sg_modified))
-    total_time = 0
-    while total_time <= MAX_LOGIN_TIMEOUT:
-        try:
-            cid = login_to_controller(eip, "admin", new_private_ip)
-        except Exception as err:
-            print(str(err))
-            print("Login failed, Trying again in " + str(WAIT_DELAY))
-            total_time += WAIT_DELAY
-            time.sleep(WAIT_DELAY)
-        else:
-            break
-    if total_time == MAX_LOGIN_TIMEOUT:
-        raise AvxError("Could not login to the controller")
-
-    priv_ip = os.environ.get('PRIV_IP')     # This private IP belongs to older terminated instance
-
-    version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
-    version = retrieve_controller_version(version_file)
-
-    run_initial_setup(eip, cid, version)
-
-    # Need to login again as initial setup invalidates cid after waiting
-
-    cid = login_to_controller(eip, "admin", new_private_ip)
-
-    s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
-
-    restore_data = {"CID": cid,
-                    "action": "restore_cloudx_config",
-                    "cloud_type": "1",
-                    "access_key": os.environ.get('AWS_ACCESS_KEY_BACK'),
-                    "bucket_name": os.environ.get('S3_BUCKET_BACK'),
-                    "file_name": s3_file}
-    print("Trying to restore config with data %s\n" % str(restore_data))
-    restore_data["secret_key"] = os.environ.get('AWS_SECRET_KEY_BACK')
-    base_url = "https://" + eip + "/v1/api"
-
-    total_time = 0
-    sleep = True
-    while total_time <= INITIAL_SETUP_WAIT:
-        if sleep:
-            print("Waiting for safe initial setup completion, maximum of " +
-                  str(INITIAL_SETUP_WAIT - total_time) + " seconds remaining")
-            time.sleep(WAIT_DELAY)
-        else:
-            sleep = True
-        response = requests.post(base_url, data=restore_data, verify=False)
-        response_json = response.json()
-        print(response_json)
-        if response_json.get('return', False) is True:
-            # If restore succeeded, update private IP to that of the new
-            #  instance now.
-            print("Successfully restored backup. Updating lambda configuration")
-            set_environ(client, lambda_client, controller_instanceobj, context, eip)
-            print("Updated lambda configuration")
-            if not duplicate:
-                print("Reverting sg %s" % sg_modified)
-                restore_security_group_access(client, sg_modified)
-            print("Controller HA event has been successfully handled")
-            return
-        elif response_json.get('reason', '') == 'valid action required':
-            print("API is not ready yet")
-            total_time += WAIT_DELAY
-        elif response_json.get('reason', '') == 'CID is invalid or expired.':
-            print("Service abrupty restarted")
-            sleep = False
+    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
+                                                                                 , sg_modified))
+    try:
+        total_time = 0
+        while total_time <= MAX_LOGIN_TIMEOUT:
             try:
                 cid = login_to_controller(eip, "admin", new_private_ip)
-            except AvxError:
-                pass
+            except Exception as err:
+                print(str(err))
+                print("Login failed, Trying again in " + str(WAIT_DELAY))
+                total_time += WAIT_DELAY
+                time.sleep(WAIT_DELAY)
             else:
-                restore_data["CID"] = cid
-        else:
-            print("Restoring backup failed due to " +
-                  str(response_json.get('reason', '')))
-            return
-    print("Restore failed, did not update lambda config")
+                break
+        if total_time >= MAX_LOGIN_TIMEOUT:
+            raise AvxError("Could not login to the controller")
+        priv_ip = os.environ.get('PRIV_IP')  # This private IP belongs to older terminated instance
+
+        version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
+        version = retrieve_controller_version(version_file)
+
+        run_initial_setup(eip, cid, version)
+
+        # Need to login again as initial setup invalidates cid after waiting
+        cid = login_to_controller(eip, "admin", new_private_ip)
+        s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
+
+        restore_data = {"CID": cid,
+                        "action": "restore_cloudx_config",
+                        "cloud_type": "1",
+                        "access_key": os.environ.get('AWS_ACCESS_KEY_BACK'),
+                        "bucket_name": os.environ.get('S3_BUCKET_BACK'),
+                        "file_name": s3_file}
+        print("Trying to restore config with data %s\n" % str(restore_data))
+        restore_data["secret_key"] = os.environ.get('AWS_SECRET_KEY_BACK')
+        base_url = "https://" + eip + "/v1/api"
+
+        total_time = 0
+        sleep = True
+        while total_time <= INITIAL_SETUP_WAIT:
+            if sleep:
+                print("Waiting for safe initial setup completion, maximum of " +
+                      str(INITIAL_SETUP_WAIT - total_time) + " seconds remaining")
+                time.sleep(WAIT_DELAY)
+            else:
+                sleep = True
+            response = requests.post(base_url, data=restore_data, verify=False)
+            response_json = response.json()
+            print(response_json)
+            if response_json.get('return', False) is True:
+                # If restore succeeded, update private IP to that of the new
+                #  instance now.
+                print("Successfully restored backup. Updating lambda configuration")
+                set_environ(client, lambda_client, controller_instanceobj, context, eip)
+                print("Updated lambda configuration")
+                print("Controller HA event has been successfully handled")
+                return
+            elif response_json.get('reason', '') == 'valid action required':
+                print("API is not ready yet")
+                total_time += WAIT_DELAY
+            elif response_json.get('reason', '') == 'CID is invalid or expired.':
+                print("Service abrupty restarted")
+                sleep = False
+                try:
+                    cid = login_to_controller(eip, "admin", new_private_ip)
+                except AvxError:
+                    pass
+                else:
+                    restore_data["CID"] = cid
+            else:
+                print("Restoring backup failed due to " +
+                      str(response_json.get('reason', '')))
+                return
+        raise AvxError("Restore failed, did not update lambda config")
+    except Exception:
+        raise
+    finally:
+        if not duplicate:
+            print("Reverting sg %s" % sg_modified)
+            restore_security_group_access(client, sg_modified)
 
 
 def assign_eip(client, controller_instanceobj, eip):
