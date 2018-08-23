@@ -103,6 +103,7 @@ def _lambda_handler(event, context):
                 # will be called to delete AssignEIP resource. If the controller
                 # instance is not present, then cloud formation will be stuck
                 # in deletion.So just pass in that case.
+                send_response(event, context, 'SUCCESS', {})
             return
         else:
             try:
@@ -153,6 +154,8 @@ def _lambda_handler(event, context):
             key_name = os.environ.get('KEY_NAME')
             delete_resources(None, detach_instances=False)
             setup_ha(ami_id, inst_type, None, key_name, [sg_id], context, attach_instance=False)
+    else:
+        print("Unknown source. Not from CFT or SNS")
 
 
 def handle_cloud_formation_request(client, event, lambda_client, controller_instanceobj, context,
