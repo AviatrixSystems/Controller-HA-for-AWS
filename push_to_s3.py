@@ -22,15 +22,23 @@ LAMBDA_ZIP_DEV_FILE = 'aviatrix_ha_dev.zip'
 CFT_BUCKET_NAME = "aviatrix-cloudformation-templates"
 CFT_BUCKET_REGION = "us-west-2"
 CFT_FILE_NAME = "aviatrix-aws-existing-controller-ha.json"
+CFT_DEV_FILE_NAME = "aviatrix-aws-existing-controller-ha-dev.json"
 
 
 def push_cft_s3():
-    """ push CFT to S3"""
+    """ Push CFT to S3"""
     print(" Pushing CFT")
     s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
                        region_name=CFT_BUCKET_REGION)
+    dst_file = CFT_FILE_NAME
     try:
-        s3_.upload_file(CFT_FILE_NAME, CFT_BUCKET_NAME, CFT_FILE_NAME,
+        if sys.argv[1] == "--dev":
+            print("Pushing CFT to dev bucket")
+            dst_file = CFT_DEV_FILE_NAME
+    except IndexError:
+        pass
+    try:
+        s3_.upload_file(CFT_FILE_NAME, CFT_BUCKET_NAME, dst_file,
                         ExtraArgs={'ACL': 'public-read'})
     except ClientError:
         print(traceback.format_exc())
@@ -38,7 +46,7 @@ def push_cft_s3():
 
 
 def push_lambda_file_s3():
-    """ push lambda file to each region"""
+    """ Push lambda file to each region"""
     ec2_ = boto3.client('ec2', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
                         region_name='us-west-1')
     regions = [reg['RegionName'] for reg in ec2_.describe_regions()['Regions']]

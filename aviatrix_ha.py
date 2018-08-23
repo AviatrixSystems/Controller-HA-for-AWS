@@ -285,10 +285,34 @@ def update_env_dict(lambda_client, context, replace_dict):
     print ("Updated environment dictionary")
 
 
+def login_to_controller(ip_addr, username, pwd):
+    """ Logs into the controller and returns the cid"""
+    base_url = "https://" + ip_addr + "/v1/api"
+    url = base_url + "?action=login&username=" + username + "&password=" +\
+          urllib2.quote(pwd, '%')
+    try:
+        response = requests.get(url, verify=False)
+    except Exception as err:
+        print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
+                                                                      str(err)))
+        raise AvxError(str(err))
+    response_json = response.json()
+    print(response_json)
+    try:
+        cid = response_json['CID']
+        print("Created new session with CID {}\n".format(cid))
+    except KeyError as err:
+        print("Unable to create session. {}".format(err))
+        raise AvxError("Unable to create session. {}".format(err))
+    else:
+        return cid
+
+
 def set_environ(client, lambda_client, controller_instanceobj, context,
                 eip=None):
     """ Sets Environment variables """
     if eip is None:
+        # From cloud formation. EIP is not known at this point. So get from controller inst
         eip = controller_instanceobj[
             'NetworkInterfaces'][0]['Association'].get('PublicIp')
     else:
@@ -351,29 +375,6 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
     lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                 Environment={'Variables': env_dict})
     os.environ.update(env_dict)
-
-
-def login_to_controller(ip_addr, username, pwd):
-    """ Logs into the controller and returns the cid"""
-    base_url = "https://" + ip_addr + "/v1/api"
-    url = base_url + "?action=login&username=" + username + "&password=" +\
-          urllib2.quote(pwd, '%')
-    try:
-        response = requests.get(url, verify=False)
-    except Exception as err:
-        print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
-                                                                      str(err)))
-        raise AvxError(str(err))
-    response_json = response.json()
-    print(response_json)
-    try:
-        cid = response_json['CID']
-        print("Created new session with CID {}\n".format(cid))
-    except KeyError as err:
-        print("Unable to create session. {}".format(err))
-        raise AvxError("Unable to create session. {}".format(err))
-    else:
-        return cid
 
 
 def verify_credentials(controller_instanceobj):
@@ -525,6 +526,27 @@ def restore_security_group_access(client, sg_id):
             print(str(err))
 
 
+def handle_login_failure(priv_ip,
+                         client, lambda_client, controller_instanceobj, context,
+                         eip):
+    """ Handle login failure through private IP"""
+    print("Checking for backup file")
+    new_version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
+    try:
+        retrieve_controller_version(new_version_file)
+    except Exception as err:
+        print(str(err))
+        print("Could not retrieve new version file. Stopping instance. ASG will terminate and "
+              "launch a new instance")
+        inst_id = controller_instanceobj['InstanceId']
+        print("Stopping %s" % inst_id)
+        client.stop_instances(InstanceIds=[inst_id])
+    else:
+        print("Successfully retrieved version. Previous restore operation had succeeded. "
+              "Previous lambda may have exceeded 5 min. Updating lambda config")
+        set_environ(client, lambda_client, controller_instanceobj, context, eip)
+
+
 def restore_backup(client, lambda_client, controller_instanceobj, context):
     """ Restores the backup by doing the following
     1. Login to new controller
@@ -561,7 +583,10 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
             else:
                 break
         if total_time >= MAX_LOGIN_TIMEOUT:
-            raise AvxError("Could not login to the controller")
+            print ("Could not login to the controller. Attempting to handle login failure")
+            handle_login_failure(new_private_ip, client, lambda_client, controller_instanceobj,
+                                 context, eip)
+            return
         priv_ip = os.environ.get('PRIV_IP')  # This private IP belongs to older terminated instance
 
         version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"

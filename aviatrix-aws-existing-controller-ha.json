@@ -111,6 +111,7 @@
                         "ec2:DescribeInstances",
                         "ec2:DescribeAddresses",
                         "ec2:LaunchInstances",
+                        "ec2:StopInstances",
                         "ec2:AssociateAddress",
                         "ec2:DescribeImages",
                         "ec2:DeregisterImage",
