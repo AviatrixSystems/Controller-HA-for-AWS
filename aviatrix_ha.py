@@ -76,6 +76,11 @@ def _lambda_handler(event, context):
         client = boto3.client('ec2')
         lambda_client = boto3.client('lambda')
 
+    tmp_sg = os.environ.get('TMP_SG_GRP', '')
+    if tmp_sg:
+        print("Lambda probably did not complete last time. Reverting sg %s" % tmp_sg)
+        update_env_dict(lambda_client, context, {'TMP_SG_GRP': ''})
+        restore_security_group_access(client, tmp_sg)
     try:
         instance_name = os.environ.get('AVIATRIX_TAG')
         controller_instanceobj = client.describe_instances(
@@ -268,6 +273,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'MONITORING': os.environ.get('IAM_ARN'),
         'DISKS': os.environ.get('DISKS'),
         'USER_DATA': os.environ.get('USER_DATA'),
+        'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -333,6 +339,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'MONITORING': monitoring,
         'DISKS': json.dumps(disks),
         'USER_DATA': user_data,
+        'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
         }
@@ -514,7 +521,7 @@ def restore_security_group_access(client, sg_id):
                             'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
                           ])
     except botocore.exceptions.ClientError as err:
-        if "InvalidPermission.NotFound" not in str(err):
+        if "InvalidPermission.NotFound" not in str(err) and "InvalidGroup" not in str(err):
             print(str(err))
 
 
@@ -540,6 +547,8 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
                                                                                  , sg_modified))
     try:
+        if not duplicate:
+            update_env_dict(lambda_client, context, {'TMP_SG_GRP': sg_modified})
         total_time = 0
         while total_time <= MAX_LOGIN_TIMEOUT:
             try:
@@ -616,6 +625,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     finally:
         if not duplicate:
             print("Reverting sg %s" % sg_modified)
+            update_env_dict(lambda_client, context, {'TMP_SG_GRP': ''})
             restore_security_group_access(client, sg_modified)
 
 
