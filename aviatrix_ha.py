@@ -172,31 +172,33 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
             set_environ(client, lambda_client, controller_instanceobj, context)
             print("Environment variables have been set.")
         except Exception as err:
-            response_status = 'FAILED'
             err_reason = "Failed to setup environment variables %s" % str(err)
             print(err_reason)
-        if response_status == 'SUCCESS' and \
-                verify_credentials(controller_instanceobj) is True and \
-                verify_backup_file(controller_instanceobj) is True and \
-                assign_eip(client, controller_instanceobj, None) is True and \
-                _check_ami_id(controller_instanceobj['ImageId']) is True:
-            print("Verified AWS and controller Credentials and backup file")
-            print("Trying to setup HA")
-            try:
-                ami_id = controller_instanceobj['ImageId']
-                inst_id = controller_instanceobj['InstanceId']
-                inst_type = controller_instanceobj['InstanceType']
-                key_name = controller_instanceobj['KeyName']
-                sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
-                setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
-            except Exception as err:
-                response_status = 'FAILED'
-                err_reason = "Failed to setup HA %s" % str(err)
-                print(err_reason)
-        else:
+            return 'FAILED', err_reason
+
+        if not verify_credentials(controller_instanceobj):
+            return 'FAILED', 'Unable to verify S3 credentials or bucket'
+        if not verify_backup_file(controller_instanceobj):
+            return 'FAILED', 'Cannot find backup file in the bucket'
+        if not assign_eip(client, controller_instanceobj, None):
+            return 'FAILED', 'Failed to associate EIP or EIP was not found.' \
+                             ' Please attach an EIP to the controller before enabling HA'
+        if not _check_ami_id(controller_instanceobj['ImageId']):
+            return 'FAILED', "AMI is not latest. Cannot enable Controller HA. Please backup" \
+                             "/restore to the latest AMI before enabling controller HA"
+
+        print("Verified AWS and controller Credentials and backup file, EIP and AMI ID")
+        print("Trying to setup HA")
+        try:
+            ami_id = controller_instanceobj['ImageId']
+            inst_id = controller_instanceobj['InstanceId']
+            inst_type = controller_instanceobj['InstanceType']
+            key_name = controller_instanceobj['KeyName']
+            sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
+            setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
+        except Exception as err:
             response_status = 'FAILED'
-            err_reason = "Unable to verify AWS or S3 credentials, or backup not found or EIP " \
-                         " association failed or AMI is invalid."
+            err_reason = "Failed to setup HA. %s" % str(err)
             print(err_reason)
     elif event['RequestType'] == 'Delete':
         try:
@@ -679,7 +681,8 @@ def assign_eip(client, controller_instanceobj, eip):
                                  InstanceId=controller_instanceobj['InstanceId'])
     except Exception as err:
         if cf_req and "InvalidAddress.NotFound" in str(err):
-            print("EIP %s was not found. Please attach an EIP to the controller before" % eip)
+            print("EIP %s was not found. Please attach an EIP to the controller before enabling HA"
+                  % eip)
             return False
         print("Failed in assigning EIP %s" % str(err))
         return False
