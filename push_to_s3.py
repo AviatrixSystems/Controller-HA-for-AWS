@@ -2,11 +2,12 @@
 use as ACCESS_KEY=xxxx SECRET_KEY=yyyy python push_to_s3.py
 """
 from __future__ import print_function
-from botocore.exceptions import ClientError
-import boto3
 import os
 import sys
 import traceback
+import threading
+import boto3
+from botocore.exceptions import ClientError
 
 try:
     ACCESS_KEY = os.environ['ACCESS_KEY']
@@ -53,37 +54,41 @@ def push_lambda_file_s3():
 
     for region in regions:
         print (region)
-        bucket_name = BUCKET_PREFIX + region
-        s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
-                           region_name=region)
+        threading.Thread(target=push_lambda_file_in_region, args=[region]).start()
 
-        # # Buckets are already created now
-        # try:
-        #     if region == 'us-east-1':
-        #         s3_.create_bucket(Bucket=bucket_name)
-        #     else:
-        #         s3_.create_bucket(Bucket=bucket_name,
-        #                           CreateBucketConfiguration={'LocationConstraint': region})
-        # except ClientError as err:
-        #     if "BucketAlreadyOwnedByYou" in str(err):
-        #         pass
-        #     else:
-        #         print traceback.format_exc()
 
-        dst_file = LAMBDA_ZIP_FILE
-        try:
-            if sys.argv[1] == "--dev":
-                print ("Pushing to dev bucket")
-                dst_file = LAMBDA_ZIP_DEV_FILE
-        except IndexError:
-            pass
+def push_lambda_file_in_region(region):
+    """ Push"""
+    bucket_name = BUCKET_PREFIX + region
+    s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
+                       region_name=region)
 
-        try:
-            s3_.upload_file(LAMBDA_ZIP_FILE, bucket_name, dst_file,
-                            ExtraArgs={'ACL': 'public-read'})
-        except ClientError:
-            print (traceback.format_exc())
-        print ("pushed successfully to " + region)
+    # # Buckets are already created now
+    # try:
+    #     if region == 'us-east-1':
+    #         s3_.create_bucket(Bucket=bucket_name)
+    #     else:
+    #         s3_.create_bucket(Bucket=bucket_name,
+    #                           CreateBucketConfiguration={'LocationConstraint': region})
+    # except ClientError as err:
+    #     if "BucketAlreadyOwnedByYou" in str(err):
+    #         pass
+    #     else:
+    #         print traceback.format_exc()
+
+    dst_file = LAMBDA_ZIP_FILE
+    try:
+        if sys.argv[1] == "--dev":
+            print ("Pushing to dev bucket")
+            dst_file = LAMBDA_ZIP_DEV_FILE
+    except IndexError:
+        pass
+
+    try:
+        s3_.upload_file(LAMBDA_ZIP_FILE, bucket_name, dst_file, ExtraArgs={'ACL': 'public-read'})
+    except ClientError:
+        print (traceback.format_exc())
+    print ("pushed successfully to " + region)
 
 
 if __name__ == '__main__':

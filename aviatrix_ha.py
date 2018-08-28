@@ -89,13 +89,14 @@ def _lambda_handler(event, context):
                 {'Name': 'tag:Name', 'Values': [instance_name]}]
         )['Reservations'][0]['Instances'][0]
     except Exception as err:
-        print("Can't find Controller instance with name tag %s. %s" %
-              (instance_name, str(err)))
+        err_reason = "Can't find Controller instance with name tag %s. %s" % (instance_name,
+                                                                              str(err))
+        print(err_reason)
         if cf_request:
             print("From CF Request")
             if event.get("RequestType", None) == 'Create':
                 print("Create Event")
-                send_response(event, context, 'FAILED', {})
+                send_response(event, context, 'FAILED', err_reason)
                 return
             else:
                 print("Ignoring delete CFT for no Controller")
@@ -103,7 +104,7 @@ def _lambda_handler(event, context):
                 # will be called to delete AssignEIP resource. If the controller
                 # instance is not present, then cloud formation will be stuck
                 # in deletion.So just pass in that case.
-                send_response(event, context, 'SUCCESS', {})
+                send_response(event, context, 'SUCCESS', '')
             return
         else:
             try:
@@ -118,19 +119,21 @@ def _lambda_handler(event, context):
 
     if cf_request:
         try:
-            response_status = handle_cloud_formation_request(
+            response_status, err_reason = handle_cloud_formation_request(
                 client, event, lambda_client, controller_instanceobj, context, instance_name)
         except AvxError as err:
-            print (str(err))
+            err_reason = str(err)
+            print (err_reason)
             response_status = 'FAILED'
-        except Exception:       # pylint: disable=broad-except
+        except Exception as err:       # pylint: disable=broad-except
+            err_reason = str(err)
             print(traceback.format_exc())
             response_status = 'FAILED'
 
         # Send response to CFT.
         if response_status not in ['SUCCESS', 'FAILED']:
             response_status = 'FAILED'
-        send_response(event, context, response_status, {})
+        send_response(event, context, response_status, err_reason)
         print("Sent {} to CFT.".format(response_status))
     elif sns_event:
         try:
@@ -162,47 +165,54 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
                                    instance_name):
     """Handle Requests from cloud formation"""
     response_status = 'SUCCESS'
+    err_reason = ''
     if event['RequestType'] == 'Create':
         try:
             os.environ['TOPIC_ARN'] = 'N/A'
             set_environ(client, lambda_client, controller_instanceobj, context)
             print("Environment variables have been set.")
         except Exception as err:
+            err_reason = "Failed to setup environment variables %s" % str(err)
+            print(err_reason)
+            return 'FAILED', err_reason
+
+        if not verify_credentials(controller_instanceobj):
+            return 'FAILED', 'Unable to verify S3 credentials or bucket'
+        if not verify_backup_file(controller_instanceobj):
+            return 'FAILED', 'Cannot find backup file in the bucket'
+        if not assign_eip(client, controller_instanceobj, None):
+            return 'FAILED', 'Failed to associate EIP or EIP was not found.' \
+                             ' Please attach an EIP to the controller before enabling HA'
+        if not _check_ami_id(controller_instanceobj['ImageId']):
+            return 'FAILED', "AMI is not latest. Cannot enable Controller HA. Please backup" \
+                             "/restore to the latest AMI before enabling controller HA"
+
+        print("Verified AWS and controller Credentials and backup file, EIP and AMI ID")
+        print("Trying to setup HA")
+        try:
+            ami_id = controller_instanceobj['ImageId']
+            inst_id = controller_instanceobj['InstanceId']
+            inst_type = controller_instanceobj['InstanceType']
+            key_name = controller_instanceobj['KeyName']
+            sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
+            setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
+        except Exception as err:
             response_status = 'FAILED'
-            print("Failed to setup environment variables %s" % str(err))
-        if response_status == 'SUCCESS' and \
-                verify_credentials(controller_instanceobj) is True and \
-                verify_backup_file(controller_instanceobj) is True and \
-                assign_eip(client, controller_instanceobj, None) is True and \
-                _check_ami_id(controller_instanceobj['ImageId']) is True:
-            print("Verified AWS and controller Credentials and backup file")
-            print("Trying to setup HA")
-            try:
-                ami_id = controller_instanceobj['ImageId']
-                inst_id = controller_instanceobj['InstanceId']
-                inst_type = controller_instanceobj['InstanceType']
-                key_name = controller_instanceobj['KeyName']
-                sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
-                setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
-            except Exception as err:
-                response_status = 'FAILED'
-                print("Failed to setup HA %s" % str(err))
-        else:
-            response_status = 'FAILED'
-            print("Unable to verify AWS or S3 credentials. Exiting...")
+            err_reason = "Failed to setup HA. %s" % str(err)
+            print(err_reason)
     elif event['RequestType'] == 'Delete':
         try:
             print("Trying to delete lambda created resources")
             inst_id = controller_instanceobj['InstanceId']
             delete_resources(inst_id)
         except Exception as err:
-            print("Failed to delete lambda created resources. %s" %
-                  str(err))
+            err_reason = "Failed to delete lambda created resources. %s" % str(err)
+            print(err_reason)
             print("You'll have to manually delete Auto Scaling group,"
                   " Launch Configuration, and SNS topic, all with"
                   " name {}.".format(instance_name))
             response_status = 'FAILED'
-    return response_status
+    return response_status, err_reason
 
 
 def _check_ami_id(ami_id):
@@ -214,7 +224,8 @@ def _check_ami_id(ami_id):
         if ami_id in ami_dict[image_type].values():
             print("AMI is valid")
             return True
-    print("AMI is not latest. Cannot enable Controller HA")
+    print("AMI is not latest. Cannot enable Controller HA. Please backup restore to the latest AMI"
+          "before enabling controller HA")
     return False
 
 
@@ -670,7 +681,8 @@ def assign_eip(client, controller_instanceobj, eip):
                                  InstanceId=controller_instanceobj['InstanceId'])
     except Exception as err:
         if cf_req and "InvalidAddress.NotFound" in str(err):
-            print("EIP %s was not found. Please attach an EIP to the controller before" % eip)
+            print("EIP %s was not found. Please attach an EIP to the controller before enabling HA"
+                  % eip)
             return False
         print("Failed in assigning EIP %s" % str(err))
         return False
@@ -911,7 +923,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
             print("SNS topic deleted")
 
 
-def send_response(event, context, response_status, reason=None,
+def send_response(event, context, response_status, reason='',
                   response_data=None, physical_resource_id=None):
     """ Send response to cloud formation template for custom resource creation
      by cloud formation"""
@@ -920,10 +932,9 @@ def send_response(event, context, response_status, reason=None,
     response_body = json.dumps(
         {
             'Status': response_status,
-            'Reason': reason or "See the details in CloudWatch Log Stream: "
+            'Reason': str(reason) + ". See the details in CloudWatch Log Stream: "
                       + context.log_stream_name,
-            'PhysicalResourceId': physical_resource_id or
-                                  context.log_stream_name,
+            'PhysicalResourceId': physical_resource_id or context.log_stream_name,
             'StackId': event['StackId'],
             'RequestId': event['RequestId'],
             'LogicalResourceId': event['LogicalResourceId'],
