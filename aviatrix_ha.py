@@ -4,6 +4,7 @@ import time
 import os
 import uuid
 import json
+import threading
 import urllib2
 from urllib2 import HTTPError, build_opener, HTTPHandler, Request
 import traceback
@@ -109,7 +110,7 @@ def _lambda_handler(event, context):
         else:
             try:
                 sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
-                print (sns_msg_event)
+                print(sns_msg_event)
             except (KeyError, IndexError, ValueError) as err:
                 raise AvxError("1.Could not parse SNS message %s" % str(err))
             if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
@@ -123,7 +124,7 @@ def _lambda_handler(event, context):
                 client, event, lambda_client, controller_instanceobj, context, instance_name)
         except AvxError as err:
             err_reason = str(err)
-            print (err_reason)
+            print(err_reason)
             response_status = 'FAILED'
         except Exception as err:       # pylint: disable=broad-except
             err_reason = str(err)
@@ -217,7 +218,7 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
 
 def _check_ami_id(ami_id):
     """ Check if AMI is latest"""
-    print ("Verifying AMI ID")
+    print("Verifying AMI ID")
     resp = requests.get(AMI_ID)
     ami_dict = json.loads(resp.content)
     for image_type in ami_dict:
@@ -296,7 +297,7 @@ def update_env_dict(lambda_client, context, replace_dict):
 
     lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                 Environment={'Variables': env_dict})
-    print ("Updated environment dictionary")
+    print("Updated environment dictionary")
 
 
 def login_to_controller(ip_addr, username, pwd):
@@ -381,7 +382,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
         }
-    print ("Setting environment %s" % env_dict)
+    print("Setting environment %s" % env_dict)
 
     env_dict['AWS_ACCESS_KEY_BACK'] = os.environ.get('AWS_ACCESS_KEY_BACK')
     env_dict['AWS_SECRET_KEY_BACK'] = os.environ.get('AWS_SECRET_KEY_BACK')
@@ -430,7 +431,7 @@ def verify_backup_file(controller_instanceobj):
             if err.response['Error']['Code'] == "404":
                 print("The object %s does not exist." % s3_file)
                 return False
-            print (str(err))
+            print(str(err))
             return False
     except Exception as err:
         print("Verify Backup failed %s" % str(err))
@@ -479,7 +480,7 @@ def run_initial_setup(ip_addr, cid, version):
     post_data = {"CID": cid,
                  "action": "initial_setup",
                  "subaction": "check"}
-    print ("Checking initial setup")
+    print("Checking initial setup")
     response = requests.post(base_url, data=post_data, verify=False)
     response_json = response.json()
     if response_json.get('return') is True:
@@ -561,15 +562,27 @@ def handle_login_failure(priv_ip,
         set_environ(client, lambda_client, controller_instanceobj, context, eip)
 
 
+def enable_t2_unlimited(client, inst_id):
+    """ Modify instance credit to unlimited for T2 """
+    print("Enabling T2 unlimited for %s" % inst_id)
+    try:
+        client.modify_instance_credit_specification(ClientToken=inst_id,
+                                                    InstanceCreditSpecifications=[{
+                                                        'InstanceId': inst_id,
+                                                        'CpuCredits': 'unlimited'}])
+    except botocore.exceptions.ClientError as err:
+        print(str(err))
+
+
 def restore_backup(client, lambda_client, controller_instanceobj, context):
     """ Restores the backup by doing the following
     1. Login to new controller
     2. Assign the EIP to the new controller
     2. Run initial setup to boot ot specific version parsed from backup
     3. Login again and restore the configuration """
-    inst_id = os.environ.get('INST_ID')
-    if inst_id == controller_instanceobj['InstanceId']:
-        print ("Controller is already saved. Not restoring")
+    old_inst_id = os.environ.get('INST_ID')
+    if old_inst_id == controller_instanceobj['InstanceId']:
+        print("Controller is already saved. Not restoring")
         return
     if not assign_eip(client, controller_instanceobj, os.environ.get('EIP')):
         raise AvxError("Could not assign EIP")
@@ -579,6 +592,8 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
         'NetworkInterfaces')[0].get('PrivateIpAddress')
     print("New Private IP " + str(new_private_ip))
 
+    threading.Thread(target=enable_t2_unlimited,
+                     args=[client, controller_instanceobj['InstanceId']]).start()
     duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj)
     print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
                                                                                  , sg_modified))
@@ -597,7 +612,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
             else:
                 break
         if total_time >= MAX_LOGIN_TIMEOUT:
-            print ("Could not login to the controller. Attempting to handle login failure")
+            print("Could not login to the controller. Attempting to handle login failure")
             handle_login_failure(new_private_ip, client, lambda_client, controller_instanceobj,
                                  context, eip)
             return
@@ -700,14 +715,14 @@ def validate_keypair(key_name):
         raise AvxError(str(err))
     key_aws_list = [key['KeyName'] for key in response['KeyPairs']]
     if key_name not in key_aws_list:
-        print ("Key does not exist. Creating")
+        print("Key does not exist. Creating")
         try:
             client = boto3.client('ec2')
             client.create_key_pair(KeyName=key_name)
         except botocore.exceptions.ClientError as err:
             raise AvxError(str(err))
     else:
-        print ("Key exists")
+        print("Key exists")
 
 
 def validate_subnets(subnet_list):
@@ -728,7 +743,7 @@ def validate_subnets(subnet_list):
         if ctrl_subnet not in sub_aws_list:
             raise AvxError("All subnets %s or controller subnet %s are not found in vpc %s")
         else:
-            print ("All subnets are invalid. Using existing controller subnet")
+            print("All subnets are invalid. Using existing controller subnet")
             return ctrl_subnet
     else:
         return ",".join(sub_list_new)
@@ -737,8 +752,8 @@ def validate_subnets(subnet_list):
 def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
              attach_instance=True):
     """ Setup HA """
-    print ("HA config ami_id %s, inst_type %s, inst_id %s, key_name %s, sg_list %s, "
-           "attach_instance %s" % (ami_id, inst_type, inst_id, key_name, sg_list, attach_instance))
+    print("HA config ami_id %s, inst_type %s, inst_id %s, key_name %s, sg_list %s, "
+          "attach_instance %s" % (ami_id, inst_type, inst_id, key_name, sg_list, attach_instance))
     lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
     # AMI_NAME = LC_NAME
     # ami_id = client.describe_images(
@@ -747,7 +762,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     asg_client = boto3.client('autoscaling')
     sub_list = os.environ.get('SUBNETLIST')
     val_subnets = validate_subnets(sub_list.split(","))
-    print ("Valid subnets %s" % val_subnets)
+    print("Valid subnets %s" % val_subnets)
     validate_keypair(key_name)
     bld_map = []
     disks = json.loads(os.environ.get('DISKS'))
@@ -769,7 +784,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         raise AvxError("Could not find any disks attached to the controller")
 
     if inst_id:
-        print ("Setting launch config from instance")
+        print("Setting launch config from instance")
         asg_client.create_launch_configuration(
             LaunchConfigurationName=lc_name,
             ImageId=ami_id,
@@ -803,7 +818,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     tries = 0
     while tries < 3:
         try:
-            print ("Trying to create ASG")
+            print("Trying to create ASG")
             asg_client.create_auto_scaling_group(
                 AutoScalingGroupName=asg_name,
                 LaunchConfigurationName=lc_name,
@@ -849,9 +864,9 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                                  Protocol='email',
                                  Endpoint=os.environ.get('NOTIF_EMAIL'))
         except botocore.exceptions.ClientError as err:
-            print ("Could not add email notification %s" % str(err))
+            print("Could not add email notification %s" % str(err))
     else:
-        print ("Not adding email notification")
+        print("Not adding email notification")
     lambda_client.add_permission(FunctionName=context.function_name,
                                  StatementId=str(uuid.uuid4()),
                                  Action='lambda:InvokeFunction',
@@ -902,7 +917,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
         sns_client = boto3.client('sns')
         topic_arn = os.environ.get('TOPIC_ARN')
         if topic_arn == "N/A":
-            print ("Topic not created. Exiting")
+            print("Topic not created. Exiting")
             return
         try:
             response = sns_client.list_subscriptions_by_topic(TopicArn=topic_arn)

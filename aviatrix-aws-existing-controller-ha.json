@@ -126,6 +126,7 @@
                         "ec2:DescribeKeyPairs",
                         "ec2:CreateKeyPair",
                         "ec2:DescribeVolumes",
+                        "ec2:ModifyInstanceCreditSpecification",
                         "lambda:UpdateFunctionConfiguration",
                         "lambda:GetFunction",
                         "lambda:AddPermission",
