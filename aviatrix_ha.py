@@ -593,7 +593,7 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
     print("New Private IP " + str(new_private_ip))
 
     threading.Thread(target=enable_t2_unlimited,
-                     args=[controller_instanceobj['InstanceId']]).start()
+                     args=[client, controller_instanceobj['InstanceId']]).start()
     duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj)
     print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
                                                                                  , sg_modified))
