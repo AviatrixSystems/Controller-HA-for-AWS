@@ -22,11 +22,11 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 ### Step by step Procedure:
 
-1. Make sure that controller version is >= 3.4 in Settings->Maintence->Upgrade. if not, upgrade your controller to the latest by clicking on "Upgrade" in Settings->Maintence->Upgrade
+1. Make sure that controller version is >= 3.4 in Settings->Maintence->Upgrade. if not, upgrade your controller to the latest by clicking on "Upgrade" in Settings->Maintenance->Upgrade
 
-2. In the controller, make sure that daily backup and restore is enabled in Settings->Maintence->Backup restore page
+2. In the controller, make sure that daily backup and restore is enabled in Settings->Maintenance->Backup restore page
 
-3. Do a "Backup Now" from  the Settings->Maintence->Backup restore page
+3. Do a "Backup Now" from  the Settings->Maintenance->Backup restore page
 
 4. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) 
 
