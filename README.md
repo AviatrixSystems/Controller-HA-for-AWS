@@ -18,11 +18,12 @@ This script is only supported for Aviatrix Controller version >= 3.4
 * Existing controller's VPC should have one or more public subnets, preferrably in different AZs for HA across AZ. 
 * Existing controller version should be >= 3.4. if not, upgrade your controller to the latest
 * Existing controller must have backup and restore enabled
+* Existing controller must have at least AMI ID aviatrix_cloud_services_gateway_043018_BYOL-xxxxxx. If you are on an older AMI ID, please refer [here](https://github.com/AviatrixSystems/Docs/blob/master/HowTos/Migration_From_Marketplace.rst) to migrate to the latest controller AMI ID first.
 * S3 bucket(s) to host the Lambda script and for the backup restore functionality
 
 ### Step by step Procedure:
 
-1. Make sure that controller version is >= 3.4 in Settings->Maintence->Upgrade. if not, upgrade your controller to the latest by clicking on "Upgrade" in Settings->Maintenance->Upgrade
+1. Make sure that controller version is >= 3.4 in Settings->Maintenance->Upgrade. if not, upgrade your controller to the latest by clicking on "Upgrade" in Settings->Maintence->Upgrade
 
 2. In the controller, make sure that daily backup and restore is enabled in Settings->Maintenance->Backup restore page
 
