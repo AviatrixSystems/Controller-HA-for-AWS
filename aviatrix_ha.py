@@ -16,7 +16,7 @@ import botocore
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
-MAX_LOGIN_TIMEOUT = 240
+MAX_LOGIN_TIMEOUT = 800
 WAIT_DELAY = 30
 
 INITIAL_SETUP_WAIT = 180
