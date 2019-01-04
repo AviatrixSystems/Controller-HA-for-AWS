@@ -109,6 +109,7 @@
                     "Effect": "Allow",
                     "Action": [
                         "ec2:DescribeInstances",
+                        "ec2:DescribeInstanceAttribute",
                         "ec2:DescribeAddresses",
                         "ec2:LaunchInstances",
                         "ec2:StopInstances",
@@ -146,7 +147,8 @@
                         "sns:ListSubscriptionsByTopic",
                         "ssm:SendCommand",
                         "ssm:ListCommandInvocations",
-                        "iam:PassRole"
+                        "iam:PassRole",
+                        "iam:CreateServiceLinkedRole"
                     ],
                     "Resource": "*"
                 }
