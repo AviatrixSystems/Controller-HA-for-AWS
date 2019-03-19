@@ -146,7 +146,7 @@ def _lambda_handler(event, context):
         print("SNS Event %s Description %s " % (sns_msg_event, sns_msg_desc))
         if sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH":
             print("Instance launched from Autoscaling")
-            restore_backup(client, lambda_client, controller_instanceobj, context)
+            handle_ha_event(client, lambda_client, controller_instanceobj, context)
         elif sns_msg_event == "autoscaling:TEST_NOTIFICATION":
             print("Successfully received Test Event from ASG")
         elif sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
@@ -177,8 +177,11 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
             print(err_reason)
             return 'FAILED', err_reason
 
-        if not verify_credentials(controller_instanceobj):
-            return 'FAILED', 'Unable to verify S3 credentials or bucket'
+        if not verify_iam(controller_instanceobj):
+            return 'FAILED', 'IAM role aviatrix-role-ec2 could not be verified to be attached to' \
+                             ' controller'
+        if not verify_bucket(controller_instanceobj):
+            return 'FAILED', 'Unable to verify S3 bucket'
         if not verify_backup_file(controller_instanceobj):
             return 'FAILED', 'Cannot find backup file in the bucket'
         if not assign_eip(client, controller_instanceobj, None):
@@ -279,8 +282,6 @@ def update_env_dict(lambda_client, context, replace_dict):
         'PRIV_IP': os.environ.get('PRIV_IP'),
         'INST_ID': os.environ.get('INST_ID'),
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
-        'AWS_ACCESS_KEY_BACK': os.environ.get('AWS_ACCESS_KEY_BACK'),
-        'AWS_SECRET_KEY_BACK': os.environ.get('AWS_SECRET_KEY_BACK'),
         'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
         'TOPIC_ARN': os.environ.get('TOPIC_ARN'),
         'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
@@ -384,27 +385,32 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         }
     print("Setting environment %s" % env_dict)
 
-    env_dict['AWS_ACCESS_KEY_BACK'] = os.environ.get('AWS_ACCESS_KEY_BACK')
-    env_dict['AWS_SECRET_KEY_BACK'] = os.environ.get('AWS_SECRET_KEY_BACK')
-
     lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                 Environment={'Variables': env_dict})
     os.environ.update(env_dict)
 
 
-def verify_credentials(controller_instanceobj):
+def verify_iam(controller_instanceobj):
+    """ Verify IAM roles"""
+    print("Verifying IAM roles ")
+    iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
+    if not iam_arn:
+        return False
+    return True
+
+
+def verify_bucket(controller_instanceobj):
     """ Verify S3 and controller account credentials """
-    print("Verifying Credentials")
+    print("Verifying bucket")
     try:
-        s3_client = boto3.client('s3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
-                                 aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
+        s3_client = boto3.client('s3')
         s3_client.get_bucket_location(Bucket=os.environ.get('S3_BUCKET_BACK'))
 
     except Exception as err:
-        print("Either S3 credentials or S3 bucket used for backup is not "
+        print("S3 bucket used for backup is not "
               "valid. %s" % str(err))
         return False
-    print("S3 credentials and S3 bucket both are valid.")
+    print("S3 bucket is valid.")
     eip = controller_instanceobj[
         'NetworkInterfaces'][0]['Association'].get('PublicIp')
     print(eip)
@@ -418,8 +424,7 @@ def verify_backup_file(controller_instanceobj):
     """ Verify if s3 file exists"""
     print("Verifying Backup file")
     try:
-        s3c = boto3.client('s3', aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
-                           aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
+        s3c = boto3.client('s3')
         priv_ip = controller_instanceobj['NetworkInterfaces'][0]['PrivateIpAddress']
         version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
         retrieve_controller_version(version_file)
@@ -443,10 +448,7 @@ def verify_backup_file(controller_instanceobj):
 def retrieve_controller_version(version_file):
     """ Get the controller version from backup file"""
     print("Retrieving version from file " + str(version_file))
-    s3c = boto3.client(
-        's3',
-        aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_BACK'),
-        aws_secret_access_key=os.environ.get('AWS_SECRET_KEY_BACK'))
+    s3c = boto3.client('s3')
     try:
         with open('/tmp/version_ctrlha.txt', 'w') as data:
             s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), version_file,
@@ -574,7 +576,41 @@ def enable_t2_unlimited(client, inst_id):
         print(str(err))
 
 
-def restore_backup(client, lambda_client, controller_instanceobj, context):
+def create_cloud_account(cid, controller_ip, account_name):
+    """ Create a temporary account to restore the backup"""
+    print("Creating temporary account")
+    client = boto3.client('sts')
+    aws_acc_num = client.get_caller_identity()["Account"]
+    base_url = "https://%s/v1/api" % controller_ip
+    post_data = {"CID": cid,
+                 "action": "setup_account_profile",
+                 "account_name": account_name,
+                 "aws_account_number": aws_acc_num,
+                 "aws_role_arn": "arn:aws:iam::%s:role/aviatrix-role-app" % aws_acc_num,
+                 "aws_role_ec2": "arn:aws:iam::%s:role/aviatrix-role-ec2" % aws_acc_num,
+                 "cloud_type": 1,
+                 "aws_iam": "true"}
+    print("Trying to create account with data %s\n" % str(post_data))
+    response = requests.post(base_url, data=post_data, verify=False)
+    return response.json()
+
+
+def restore_backup(cid, controller_ip, s3_file, account_name):
+    """ Restore backup from the s3 bucket"""
+    restore_data = {
+        "CID": cid,
+        "action": "restore_cloudx_config",
+        "cloud_type": "1",
+        "account_name": account_name,
+        "file_name": s3_file,
+        "bucket_name": os.environ.get('S3_BUCKET_BACK')}
+    print("Trying to restore config with data %s\n" % str(restore_data))
+    base_url = "https://" + controller_ip + "/v1/api"
+    response = requests.post(base_url, data=restore_data, verify=False)
+    return response.json()
+
+
+def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     """ Restores the backup by doing the following
     1. Login to new controller
     2. Assign the EIP to the new controller
@@ -626,19 +662,11 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
         # Need to login again as initial setup invalidates cid after waiting
         cid = login_to_controller(eip, "admin", new_private_ip)
         s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
-
-        restore_data = {"CID": cid,
-                        "action": "restore_cloudx_config",
-                        "cloud_type": "1",
-                        "access_key": os.environ.get('AWS_ACCESS_KEY_BACK'),
-                        "bucket_name": os.environ.get('S3_BUCKET_BACK'),
-                        "file_name": s3_file}
-        print("Trying to restore config with data %s\n" % str(restore_data))
-        restore_data["secret_key"] = os.environ.get('AWS_SECRET_KEY_BACK')
-        base_url = "https://" + eip + "/v1/api"
+        temp_acc_name = "tempacc"
 
         total_time = 0
         sleep = True
+        created_temp_acc = False
         while total_time <= INITIAL_SETUP_WAIT:
             if sleep:
                 print("Waiting for safe initial setup completion, maximum of " +
@@ -646,10 +674,15 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
                 time.sleep(WAIT_DELAY)
             else:
                 sleep = True
-            response = requests.post(base_url, data=restore_data, verify=False)
-            response_json = response.json()
-            print(response_json)
-            if response_json.get('return', False) is True:
+            if not created_temp_acc:
+                response_json = create_cloud_account(cid, eip, temp_acc_name)
+                print(response_json)
+                if response_json.get('return', False) is True:
+                    created_temp_acc = True
+            if created_temp_acc:
+                response_json = restore_backup(cid, eip, s3_file, temp_acc_name)
+                print(response_json)
+            if response_json.get('return', False) is True and created_temp_acc:
                 # If restore succeeded, update private IP to that of the new
                 #  instance now.
                 print("Successfully restored backup. Updating lambda configuration")
@@ -657,6 +690,9 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
                 print("Updated lambda configuration")
                 print("Controller HA event has been successfully handled")
                 return
+            elif response_json.get('reason', '') == 'account_password required.':
+                print("API is not ready yet, requires account_password")
+                total_time += WAIT_DELAY
             elif response_json.get('reason', '') == 'valid action required':
                 print("API is not ready yet")
                 total_time += WAIT_DELAY
@@ -667,8 +703,6 @@ def restore_backup(client, lambda_client, controller_instanceobj, context):
                     cid = login_to_controller(eip, "admin", new_private_ip)
                 except AvxError:
                     pass
-                else:
-                    restore_data["CID"] = cid
             else:
                 print("Restoring backup failed due to " +
                       str(response_json.get('reason', '')))
@@ -947,8 +981,8 @@ def send_response(event, context, response_status, reason='',
     response_body = json.dumps(
         {
             'Status': response_status,
-            'Reason': str(reason) + ". See the details in CloudWatch Log Stream: "
-                      + context.log_stream_name,
+            'Reason': str(reason) + ". See the details in CloudWatch Log Stream: " +
+                      context.log_stream_name,
             'PhysicalResourceId': physical_resource_id or context.log_stream_name,
             'StackId': event['StackId'],
             'RequestId': event['RequestId'],
