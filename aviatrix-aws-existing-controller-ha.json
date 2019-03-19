@@ -22,8 +22,6 @@
          "SubnetParam" : { "default" : "Enter one or more subnets in different Availability zones within that VPC." },
          "AviatrixTagParam": { "default" : "Enter Name tag of the existing Aviatrix Controller instance." },
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
-         "AwsAccessKeyParam": { "default" : "Enter AWS Access Key with permission to access S3 bucket." },
-         "AwsSecretKeyParam": { "default" : "Enter AWS Secret Key with permission to access S3 bucket." },
          "NotifEmailParam": { "default" : "Enter an email to receive notifications for autoscaling group events" }
       }
     }
@@ -49,17 +47,6 @@
       {
         "Type": "String",
         "Description": "Enter S3 Bucket which will be used to store backup files."
-      },
-      "AwsAccessKeyParam":
-      {
-        "Type": "String",
-        "Description": "Enter AWS Access Key with permission to access S3 bucket."
-      },
-      "AwsSecretKeyParam":
-      {
-        "Type": "String",
-        "Description": "Enter AWS Secret Key with permission to access S3 bucket.",
-        "NoEcho": true
       },
       "NotifEmailParam":
       {
@@ -148,7 +135,9 @@
                         "ssm:SendCommand",
                         "ssm:ListCommandInvocations",
                         "iam:PassRole",
-                        "iam:CreateServiceLinkedRole"
+                        "iam:CreateServiceLinkedRole",
+                        "s3:GetBucketLocation",
+                        "s3:GetObject"
                     ],
                     "Resource": "*"
                 }
@@ -167,8 +156,6 @@
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
               "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
               "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
-              "AWS_ACCESS_KEY_BACK" : { "Ref" : "AwsAccessKeyParam" },
-              "AWS_SECRET_KEY_BACK" : { "Ref" : "AwsSecretKeyParam" },
               "NOTIF_EMAIL" : { "Ref" : "NotifEmailParam" }
             }
           },
