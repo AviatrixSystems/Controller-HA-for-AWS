@@ -18,20 +18,21 @@ except KeyError:
 
 BUCKET_PREFIX = "aviatrix-lambda-"
 LAMBDA_ZIP_FILE = 'aviatrix_ha.zip'
+LAMBDA_ZIP_DST_FILE = 'aviatrix_ha_acc_sec.zip'
 LAMBDA_ZIP_DEV_FILE = 'aviatrix_ha_dev.zip'
 
 CFT_BUCKET_NAME = "aviatrix-cloudformation-templates"
 CFT_BUCKET_REGION = "us-west-2"
 CFT_FILE_NAME = "aviatrix-aws-existing-controller-ha.json"
 CFT_DEV_FILE_NAME = "aviatrix-aws-existing-controller-ha-dev.json"
-
+CFT_DST_FILE_NAME = "aviatrix-aws-existing-controller-ha-acc-sec.json"
 
 def push_cft_s3():
     """ Push CFT to S3"""
     print(" Pushing CFT")
     s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
                        region_name=CFT_BUCKET_REGION)
-    dst_file = CFT_FILE_NAME
+    dst_file = CFT_DST_FILE_NAME
     try:
         if sys.argv[1] == "--dev":
             print("Pushing CFT to dev bucket")
@@ -76,7 +77,7 @@ def push_lambda_file_in_region(region):
     #     else:
     #         print traceback.format_exc()
 
-    dst_file = LAMBDA_ZIP_FILE
+    dst_file = LAMBDA_ZIP_DST_FILE
     try:
         if sys.argv[1] == "--dev":
             print ("Pushing to dev bucket")

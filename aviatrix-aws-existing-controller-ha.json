@@ -161,7 +161,7 @@
     "AviatrixLambda" : {
        "Type" : "AWS::Lambda::Function",
        "Properties" : {
-          "Code" : {"S3Bucket" : { "Fn::Join" : [ "-", [ "aviatrix-lambda", { "Ref" : "AWS::Region"}]]}, "S3Key" : "aviatrix_ha.zip"},
+          "Code" : {"S3Bucket" : { "Fn::Join" : [ "-", [ "aviatrix-lambda", { "Ref" : "AWS::Region"}]]}, "S3Key" : "aviatrix_ha_acc_sec.zip"},
           "Environment" : {
             "Variables": { 
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },

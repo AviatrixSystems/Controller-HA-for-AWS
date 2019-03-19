@@ -29,7 +29,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 3. Do a "Backup Now" from  the Settings->Maintenance->Backup restore page
 
-4. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) 
+4. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha-acc-sec.json) 
 
 5. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHA`
 
