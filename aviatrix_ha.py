@@ -392,8 +392,10 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
 
 def verify_iam(controller_instanceobj):
     """ Verify IAM roles"""
-    print("Verifying IAM roles %s" % controller_instanceobj)
-    # TODO
+    print("Verifying IAM roles ")
+    iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
+    if not iam_arn:
+        return False
     return True
 
 
