@@ -15,12 +15,12 @@ This script is only supported for Aviatrix Controller version >= 3.4
 ### Pre-requisites:
 
 * VPC of existing controller.
-* Existing controller's VPC should have one or more public subnets, preferrably in different AZs for HA across AZ. 
+* Existing controller's VPC should have one or more public subnets, preferrably in different AZs for HA across AZ.
 * Existing controller version should be >= 3.4. if not, upgrade your controller to the latest
 * Existing controller must have backup and restore enabled
 * Existing controller must have at least AMI ID aviatrix_cloud_services_gateway_043018_BYOL-xxxxxx. If you are on an older AMI ID, please refer [here](https://docs.aviatrix.com/HowTos/Migration_From_Marketplace.html) to migrate to the latest controller AMI ID first.
 * Existing controller must have "aviatrix-role-ec2" attached to it and IAM roles "aviatrix-role-ec2" and "aviatrix-role-app" must be created before hand. Refer [here](https://docs.aviatrix.com/HowTos/HowTo_IAM_role.html)
-* Non IAM based controller HA script has been deprecated. An old version is available at "access_key_support" branch in github 
+* Non IAM based controller HA script has been deprecated. An old version is available at "access_key_support" branch in github
 * S3 bucket(s) to host the Lambda script and for the backup restore functionality
 * S3 bucket used for controller backup/restore must be in the same account
 
@@ -33,7 +33,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 3. Do a "Backup Now" from  the Settings->Maintenance->Backup restore page
 
-4. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://s3-us-west-2.amazonaws.com/aviatrix-cloudformation-templates/aviatrix-aws-existing-controller-ha.json) 
+4. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3-us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha.json)
 
 5. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHA`
 
