@@ -20,7 +20,7 @@ MAX_LOGIN_TIMEOUT = 800
 WAIT_DELAY = 30
 
 INITIAL_SETUP_WAIT = 180
-AMI_ID = 'https://s3-us-west-2.amazonaws.com/aviatrix-download/AMI_ID/ami_id.json'
+AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json'
 
 
 class AvxError(Exception):
