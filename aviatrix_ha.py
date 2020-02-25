@@ -279,6 +279,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'KEY_NAME': os.environ.get('KEY_NAME'),
         'CTRL_SUBNET': os.environ.get('CTRL_SUBNET'),
         'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
+        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS'),
         'PRIV_IP': os.environ.get('PRIV_IP'),
         'INST_ID': os.environ.get('INST_ID'),
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -369,6 +370,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'KEY_NAME': keyname,
         'CTRL_SUBNET': ctrl_subnet,
         'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
+        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS'),
         'PRIV_IP': priv_ip,
         'INST_ID': inst_id,
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -506,26 +508,29 @@ def run_initial_setup(ip_addr, cid, version):
                        "specific version")
 
 
-def temp_add_security_group_access(client, controller_instanceobj):
+def temp_add_security_group_access(client, controller_instanceobj,api_private_access):
     """ Temporarilty add 0.0.0.0/0 rule in one security group"""
     sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
-    if not sgs:
-        raise AvxError("No security groups were attached to controller")
-    try:
-        client.authorize_security_group_ingress(
-            GroupId=sgs[0],
-            IpPermissions=[{'IpProtocol': 'tcp',
-                            'FromPort': 443,
-                            'ToPort': 443,
-                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
-                          ])
-    except botocore.exceptions.ClientError as err:
-        if "InvalidPermission.Duplicate" in str(err):
-            return True, sgs[0]
-        else:
-            print(str(err))
-            raise
-    return False, sgs[0]
+    if api_private_access == "True":
+        return True, sgs[0]
+    else:
+        if not sgs:
+            raise AvxError("No security groups were attached to controller")
+        try:
+          client.authorize_security_group_ingress(
+              GroupId=sgs[0],
+             IpPermissions=[{'IpProtocol': 'tcp',
+                               'FromPort': 443,
+                               'ToPort': 443,
+                               'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+                              ])
+        except botocore.exceptions.ClientError as err:
+            if "InvalidPermission.Duplicate" in str(err):
+                return True, sgs[0]
+            else:
+                print(str(err))
+                raise
+        return False, sgs[0]
 
 
 def restore_security_group_access(client, sg_id):
@@ -607,6 +612,7 @@ def restore_backup(cid, controller_ip, s3_file, account_name):
     print("Trying to restore config with data %s\n" % str(restore_data))
     base_url = "https://" + controller_ip + "/v1/api"
     response = requests.post(base_url, data=restore_data, verify=False)
+
     return response.json()
 
 
@@ -623,23 +629,29 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     if not assign_eip(client, controller_instanceobj, os.environ.get('EIP')):
         raise AvxError("Could not assign EIP")
     eip = os.environ.get('EIP')
-
+    api_private_access = os.environ.get('API_PRIVATE_ACCESS')
     new_private_ip = controller_instanceobj.get(
         'NetworkInterfaces')[0].get('PrivateIpAddress')
     print("New Private IP " + str(new_private_ip))
+    if api_private_access == "True":
+        controller_api_ip = new_private_ip
+        print("API Access to Controller will use Private IP : " + str(controller_api_ip))
+    else:
+        controller_api_ip = eip
+        print("API Access to Controller will use Publid IP : " + str(controller_api_ip))
 
     threading.Thread(target=enable_t2_unlimited,
                      args=[client, controller_instanceobj['InstanceId']]).start()
-    duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj)
-    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
-                                                                                 , sg_modified))
+    duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj,api_private_access)
+#    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
+#                                                                                 , sg_modified))
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {'TMP_SG_GRP': sg_modified})
         total_time = 0
         while total_time <= MAX_LOGIN_TIMEOUT:
             try:
-                cid = login_to_controller(eip, "admin", new_private_ip)
+                cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
             except Exception as err:
                 print(str(err))
                 print("Login failed, Trying again in " + str(WAIT_DELAY))
@@ -649,7 +661,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 break
         if total_time >= MAX_LOGIN_TIMEOUT:
             print("Could not login to the controller. Attempting to handle login failure")
-            handle_login_failure(new_private_ip, client, lambda_client, controller_instanceobj,
+            handle_login_failure(controller_api_ip, client, lambda_client, controller_instanceobj,
                                  context, eip)
             return
         priv_ip = os.environ.get('PRIV_IP')  # This private IP belongs to older terminated instance
@@ -657,10 +669,10 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
         version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
         version = retrieve_controller_version(version_file)
 
-        run_initial_setup(eip, cid, version)
+        run_initial_setup(controller_api_ip, cid, version)
 
         # Need to login again as initial setup invalidates cid after waiting
-        cid = login_to_controller(eip, "admin", new_private_ip)
+        cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
         s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
         temp_acc_name = "tempacc"
 
@@ -675,12 +687,12 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             else:
                 sleep = True
             if not created_temp_acc:
-                response_json = create_cloud_account(cid, eip, temp_acc_name)
+                response_json = create_cloud_account(cid, controller_api_ip, temp_acc_name)
                 print(response_json)
                 if response_json.get('return', False) is True:
                     created_temp_acc = True
             if created_temp_acc:
-                response_json = restore_backup(cid, eip, s3_file, temp_acc_name)
+                response_json = restore_backup(cid, controller_api_ip, s3_file, temp_acc_name)
                 print(response_json)
             if response_json.get('return', False) is True and created_temp_acc:
                 # If restore succeeded, update private IP to that of the new
@@ -700,7 +712,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 print("Service abrupty restarted")
                 sleep = False
                 try:
-                    cid = login_to_controller(eip, "admin", new_private_ip)
+                    cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
                 except AvxError:
                     pass
             else:
