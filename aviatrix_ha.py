@@ -280,7 +280,6 @@ def update_env_dict(lambda_client, context, replace_dict):
         'CTRL_SUBNET': os.environ.get('CTRL_SUBNET'),
         'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
         'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS'),
-        'API_CORRECT_DNS_SERVER': os.environ.get('API_CORRECT_DNS_SERVER'),
         'PRIV_IP': os.environ.get('PRIV_IP'),
         'INST_ID': os.environ.get('INST_ID'),
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -372,7 +371,6 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'CTRL_SUBNET': ctrl_subnet,
         'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
         'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS'),
-        'API_CORRECT_DNS_SERVER': os.environ.get('API_CORRECT_DNS_SERVER'),
         'PRIV_IP': priv_ip,
         'INST_ID': inst_id,
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -614,20 +612,6 @@ def restore_backup(cid, controller_ip, s3_file, account_name):
     print("Trying to restore config with data %s\n" % str(restore_data))
     base_url = "https://" + controller_ip + "/v1/api"
     response = requests.post(base_url, data=restore_data, verify=False)
-#
-#   Add code to change DNS Server setting not restored properly
-#     
-    if os.environ.get('API_CORRECT_DNS_SERVER') == "True":
-        print("Correcting DNS Server Backup Bug")
-        payload = {'action': 'enable_controller_vpc_dns_server','CID': cid}
-        files = []
-        headers= {}
-
-        response2 = requests.post(base_url, headers=headers, data = payload, files = files, verify=False)
-        if response2.json().get('return', False) is True:
-            print("Set DNS Server successfully. after Restoration of backup image")
-        else:
-            print("Unable to set DNS Server.  Login as ADMIN and set manually")
 
     return response.json()
 
