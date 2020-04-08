@@ -289,7 +289,6 @@ def update_env_dict(lambda_client, context, replace_dict):
         'IAM_ARN': os.environ.get('IAM_ARN'),
         'MONITORING': os.environ.get('IAM_ARN'),
         'DISKS': os.environ.get('DISKS'),
-        'USER_DATA': os.environ.get('USER_DATA'),
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
@@ -345,9 +344,6 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
     iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
     mon_bool = controller_instanceobj.get('Monitoring', {}).get('State', 'disabled') != 'disabled'
     monitoring = 'enabled' if mon_bool else 'disabled'
-    user_data = controller_instanceobj.get('UserData', '')
-    if not user_data:
-        user_data = ''
     disks = []
     for volume in controller_instanceobj.get('BlockDeviceMappings', {}):
         ebs = volume.get('Ebs', {})
@@ -380,7 +376,6 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'IAM_ARN': iam_arn,
         'MONITORING': monitoring,
         'DISKS': json.dumps(disks),
-        'USER_DATA': user_data,
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
@@ -508,7 +503,7 @@ def run_initial_setup(ip_addr, cid, version):
                        "specific version")
 
 
-def temp_add_security_group_access(client, controller_instanceobj,api_private_access):
+def temp_add_security_group_access(client, controller_instanceobj, api_private_access):
     """ Temporarilty add 0.0.0.0/0 rule in one security group"""
     sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
     if api_private_access == "True":
@@ -517,12 +512,12 @@ def temp_add_security_group_access(client, controller_instanceobj,api_private_ac
         if not sgs:
             raise AvxError("No security groups were attached to controller")
         try:
-          client.authorize_security_group_ingress(
-              GroupId=sgs[0],
-             IpPermissions=[{'IpProtocol': 'tcp',
-                               'FromPort': 443,
-                               'ToPort': 443,
-                               'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+            client.authorize_security_group_ingress(
+                GroupId=sgs[0],
+                IpPermissions=[{'IpProtocol': 'tcp',
+                                'FromPort': 443,
+                                'ToPort': 443,
+                                'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
                               ])
         except botocore.exceptions.ClientError as err:
             if "InvalidPermission.Duplicate" in str(err):
@@ -642,9 +637,10 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
 
     threading.Thread(target=enable_t2_unlimited,
                      args=[client, controller_instanceobj['InstanceId']]).start()
-    duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj,api_private_access)
-#    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
-#                                                                                 , sg_modified))
+    duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj,
+                                                            api_private_access)
+    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
+                                                                                 , sg_modified))
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {'TMP_SG_GRP': sg_modified})
@@ -840,7 +836,6 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
         monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
-        user_data = (os.environ.get('USER_DATA'))
 
         kw_args = {
             "LaunchConfigurationName": lc_name,
@@ -851,11 +846,9 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             "AssociatePublicIpAddress": True,
             "InstanceMonitoring": {"Enabled": monitoring},
             "BlockDeviceMappings": bld_map,
-            "UserData": user_data,
             "IamInstanceProfile": iam_arn,
         }
-        if not user_data:
-            del kw_args["UserData"]
+
         if not iam_arn:
             del kw_args["IamInstanceProfile"]
         if not bld_map:
