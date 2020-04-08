@@ -508,7 +508,7 @@ def run_initial_setup(ip_addr, cid, version):
                        "specific version")
 
 
-def temp_add_security_group_access(client, controller_instanceobj,api_private_access):
+def temp_add_security_group_access(client, controller_instanceobj, api_private_access):
     """ Temporarilty add 0.0.0.0/0 rule in one security group"""
     sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
     if api_private_access == "True":
@@ -517,12 +517,12 @@ def temp_add_security_group_access(client, controller_instanceobj,api_private_ac
         if not sgs:
             raise AvxError("No security groups were attached to controller")
         try:
-          client.authorize_security_group_ingress(
-              GroupId=sgs[0],
-             IpPermissions=[{'IpProtocol': 'tcp',
-                               'FromPort': 443,
-                               'ToPort': 443,
-                               'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+            client.authorize_security_group_ingress(
+                GroupId=sgs[0],
+                IpPermissions=[{'IpProtocol': 'tcp',
+                                'FromPort': 443,
+                                'ToPort': 443,
+                                'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
                               ])
         except botocore.exceptions.ClientError as err:
             if "InvalidPermission.Duplicate" in str(err):
@@ -642,7 +642,8 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
 
     threading.Thread(target=enable_t2_unlimited,
                      args=[client, controller_instanceobj['InstanceId']]).start()
-    duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj,api_private_access)
+    duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj,
+                                                            api_private_access)
 #    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
 #                                                                                 , sg_modified))
     try:
