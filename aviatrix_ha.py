@@ -831,7 +831,9 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             LaunchConfigurationName=lc_name,
             ImageId=ami_id,
             InstanceId=inst_id,
-            BlockDeviceMappings=bld_map)
+            BlockDeviceMappings=bld_map,
+            UserData=""
+        )
     else:
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
@@ -846,6 +848,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             "AssociatePublicIpAddress": True,
             "InstanceMonitoring": {"Enabled": monitoring},
             "BlockDeviceMappings": bld_map,
+            "UserData": "",
             "IamInstanceProfile": iam_arn,
         }
 
