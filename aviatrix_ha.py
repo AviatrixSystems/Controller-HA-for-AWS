@@ -644,8 +644,8 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                      args=[client, controller_instanceobj['InstanceId']]).start()
     duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj,
                                                             api_private_access)
-#    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
-#                                                                                 , sg_modified))
+    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
+                                                                                 , sg_modified))
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {'TMP_SG_GRP': sg_modified})
