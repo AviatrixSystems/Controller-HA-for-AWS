@@ -504,7 +504,7 @@ def run_initial_setup(ip_addr, cid, version):
 
 
 def temp_add_security_group_access(client, controller_instanceobj, api_private_access):
-    """ Temporarilty add 0.0.0.0/0 rule in one security group"""
+    """ Temporarily add 0.0.0.0/0 rule in one security group"""
     sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
     if api_private_access == "True":
         return True, sgs[0]
@@ -615,8 +615,8 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     """ Restores the backup by doing the following
     1. Login to new controller
     2. Assign the EIP to the new controller
-    2. Run initial setup to boot ot specific version parsed from backup
-    3. Login again and restore the configuration """
+    3. Run initial setup to boot to specific version parsed from backup
+    4. Login again and restore the configuration """
     old_inst_id = os.environ.get('INST_ID')
     if old_inst_id == controller_instanceobj['InstanceId']:
         print("Controller is already saved. Not restoring")
@@ -633,7 +633,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
         print("API Access to Controller will use Private IP : " + str(controller_api_ip))
     else:
         controller_api_ip = eip
-        print("API Access to Controller will use Publid IP : " + str(controller_api_ip))
+        print("API Access to Controller will use Public IP : " + str(controller_api_ip))
 
     threading.Thread(target=enable_t2_unlimited,
                      args=[client, controller_instanceobj['InstanceId']]).start()
@@ -650,7 +650,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
             except Exception as err:
                 print(str(err))
-                print("Login failed, Trying again in " + str(WAIT_DELAY))
+                print("Login failed, trying again in " + str(WAIT_DELAY))
                 total_time += WAIT_DELAY
                 time.sleep(WAIT_DELAY)
             else:
