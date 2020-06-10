@@ -279,7 +279,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'KEY_NAME': os.environ.get('KEY_NAME'),
         'CTRL_SUBNET': os.environ.get('CTRL_SUBNET'),
         'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS'),
+        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS',"False"),
         'PRIV_IP': os.environ.get('PRIV_IP'),
         'INST_ID': os.environ.get('INST_ID'),
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -366,7 +366,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'KEY_NAME': keyname,
         'CTRL_SUBNET': ctrl_subnet,
         'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-        'API_PRIVATE_ACCESS': "False",
+        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS',"False"),
         'PRIV_IP': priv_ip,
         'INST_ID': inst_id,
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -521,6 +521,7 @@ def temp_add_security_group_access(client, controller_instanceobj, api_private_a
                               ])
         except botocore.exceptions.ClientError as err:
             if "InvalidPermission.Duplicate" in str(err):
+                print("0.0.0.0:443/0 rule already present: Modified Security group %s " % sgs[0])
                 return True, sgs[0]
             else:
                 print(str(err))
@@ -639,8 +640,6 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                      args=[client, controller_instanceobj['InstanceId']]).start()
     duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj,
                                                             api_private_access)
-    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
-                                                                                 , sg_modified))
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {'TMP_SG_GRP': sg_modified})
@@ -838,14 +837,19 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
         monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
-
+        api_private_access = os.environ.get('API_PRIVATE_ACCESS', "False")
+        if api_private_access == "True":
+            launch_config_public_ip_bool = False
+        else:
+            launch_config_public_ip_bool = True
+            
         kw_args = {
             "LaunchConfigurationName": lc_name,
             "ImageId": ami_id,
             "InstanceType": inst_type,
             "SecurityGroups": sg_list,
             "KeyName": key_name,
-            "AssociatePublicIpAddress": True,
+            "AssociatePublicIpAddress": launch_config_public_ip_bool,
             "InstanceMonitoring": {"Enabled": monitoring},
             "BlockDeviceMappings": bld_map,
             "UserData": "# Ignore",
