@@ -688,6 +688,21 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 if response_json.get('return', False) is True:
                     created_temp_acc = True
             if created_temp_acc:
+                if os.environ.get("CUSTOMER_ID"):
+                    print("Setting up Customer ID")
+                    base_url = "https://" + controller_api_ip + "/v1/api"
+                    post_data = {"CID": cid,
+                                "action": "setup_customer_id",
+                                "customer_id": os.environ.get("CUSTOMER_ID")
+                                }
+                    response = requests.post(base_url, data=post_data, verify=False)
+                    response_json = response.json()
+
+                    if response_json.get('return') is True:
+                        print("Customer ID successfully programmed")
+                    else:
+                        print("Customer ID programming failed. DB restore will fail")
+
                 response_json = restore_backup(cid, controller_api_ip, s3_file, temp_acc_name)
                 print(response_json)
             if response_json.get('return', False) is True and created_temp_acc:
