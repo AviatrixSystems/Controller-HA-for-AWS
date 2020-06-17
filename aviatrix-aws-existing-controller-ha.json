@@ -163,7 +163,7 @@
        "Properties" : {
           "Code" : {"S3Bucket" : { "Fn::Join" : [ "-", [ "aviatrix-lambda", { "Ref" : "AWS::Region"}]]}, "S3Key" : "aviatrix_ha.zip"},
           "Environment" : {
-            "Variables": { 
+            "Variables": {
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
               "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
               "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
@@ -174,7 +174,7 @@
           "FunctionName" : { "Fn::Join" : [ "-", [ { "Ref" : "AviatrixTagParam" }, "ha" ] ] },
           "Handler" : "aviatrix_ha.lambda_handler",
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
-          "Runtime" : "python2.7",
+          "Runtime" : "python3.7",
           "Timeout" : "900"
        }
     },
