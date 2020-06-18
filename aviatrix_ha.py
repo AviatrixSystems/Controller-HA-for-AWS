@@ -279,7 +279,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'KEY_NAME': os.environ.get('KEY_NAME'),
         'CTRL_SUBNET': os.environ.get('CTRL_SUBNET'),
         'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS'),
+        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS', "False"),
         'PRIV_IP': os.environ.get('PRIV_IP'),
         'INST_ID': os.environ.get('INST_ID'),
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -366,7 +366,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'KEY_NAME': keyname,
         'CTRL_SUBNET': ctrl_subnet,
         'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-        'API_PRIVATE_ACCESS': "False",
+        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS', "False"),
         'PRIV_IP': priv_ip,
         'INST_ID': inst_id,
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
@@ -639,8 +639,9 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                      args=[client, controller_instanceobj['InstanceId']]).start()
     duplicate, sg_modified = temp_add_security_group_access(client, controller_instanceobj,
                                                             api_private_access)
-    print("0.0.0.0:443/0 rule already present:%s Modified Security group %s " % (duplicate
-                                                                                 , sg_modified))
+    print("0.0.0.0:443/0 rule is %s present %s" %
+          ("already" if duplicate else "not",
+           "" if duplicate else ". Modified Security group %s" % sg_modified))
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {'TMP_SG_GRP': sg_modified})
