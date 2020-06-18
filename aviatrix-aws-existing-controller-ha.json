@@ -23,7 +23,7 @@
          "AviatrixTagParam": { "default" : "Enter Name tag of the existing Aviatrix Controller instance." },
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "NotifEmailParam": { "default" : "Enter an email to receive notifications for autoscaling group events" },
-         "PrivateAccess": { "default" : "Enter True to enable Private IP Access from lambda to the Controller for High Availability failover" }
+         "PrivateAccess": { "default" : "Enter True to enable Private IP Access from lambda to the Controller. Please note that you have to attach the Lambda to the VPC subnet and ensure lambda has internet access via EIP/NAT" }
       }
     }
   },
@@ -54,14 +54,14 @@
         "Type": "String",
         "Description": "Enter an email to receive notifications for autoscaling group events"
       },
-      "ApiPrivateAccess":
+      "PrivateAccess":
       {
         "Type": "String",
         "AllowedValues": [
           "True",
           "False"
         ],
-        "Description": "Enter True to enable Private IP Access to Controller for High Availabilty failover",
+        "Description": "Enter True to enable Private IP Access to the Controller from lambda. Please note that you have to attach the Lambda to the VPC subnet and ensure lambda has internet access via EIP/NAT",
         "Default": "False"
       }
   },
@@ -166,7 +166,7 @@
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
               "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
               "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
-              "API_PRIVATE_ACCESS" : { "Ref" : "ApiPrivateAccess" },
+              "API_PRIVATE_ACCESS" : { "Ref" : "PrivateAccess" },
               "NOTIF_EMAIL" : { "Ref" : "NotifEmailParam" }
             }
           },
