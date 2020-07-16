@@ -1,12 +1,13 @@
 """ Aviatrix Controller HA Lambda script """
-from __future__ import print_function
+
 import time
 import os
 import uuid
 import json
 import threading
-import urllib2
-from urllib2 import HTTPError, build_opener, HTTPHandler, Request
+import urllib.request, urllib.error, urllib.parse
+from urllib.error import HTTPError
+from urllib.request import build_opener, HTTPHandler, Request
 import traceback
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
@@ -225,7 +226,7 @@ def _check_ami_id(ami_id):
     resp = requests.get(AMI_ID)
     ami_dict = json.loads(resp.content)
     for image_type in ami_dict:
-        if ami_id in ami_dict[image_type].values():
+        if ami_id in list(ami_dict[image_type].values()):
             print("AMI is valid")
             return True
     print("AMI is not latest. Cannot enable Controller HA. Please backup restore to the latest AMI"
@@ -305,7 +306,7 @@ def login_to_controller(ip_addr, username, pwd):
     """ Logs into the controller and returns the cid"""
     base_url = "https://" + ip_addr + "/v1/api"
     url = base_url + "?action=login&username=" + username + "&password=" +\
-          urllib2.quote(pwd, '%')
+          urllib.parse.quote(pwd, '%')
     try:
         response = requests.get(url, verify=False)
     except Exception as err:
