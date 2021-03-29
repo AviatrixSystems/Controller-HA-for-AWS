@@ -36,6 +36,10 @@ def push_cft_s3():
         if sys.argv[1] == "--dev":
             print("Pushing CFT to dev bucket")
             dst_file = CFT_DEV_FILE_NAME
+            with open(CFT_FILE_NAME) as fileh:
+                if LAMBDA_ZIP_DEV_FILE not in fileh.read():
+                    print(LAMBDA_ZIP_DEV_FILE + " not found in lambda in CFT")
+                    return
     except IndexError:
         pass
     try:

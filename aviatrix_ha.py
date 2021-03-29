@@ -289,6 +289,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'IAM_ARN': os.environ.get('IAM_ARN'),
         'MONITORING': os.environ.get('IAM_ARN'),
         'DISKS': os.environ.get('DISKS'),
+        'TAGS': os.environ.get('TAGS', '[]'),
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
@@ -344,6 +345,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
     iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
     mon_bool = controller_instanceobj.get('Monitoring', {}).get('State', 'disabled') != 'disabled'
     monitoring = 'enabled' if mon_bool else 'disabled'
+    tags = controller_instanceobj.get("Tags", [])
     disks = []
     for volume in controller_instanceobj.get('BlockDeviceMappings', {}):
         ebs = volume.get('Ebs', {})
@@ -376,6 +378,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'IAM_ARN': iam_arn,
         'MONITORING': monitoring,
         'DISKS': json.dumps(disks),
+        'TAGS': json.dumps(tags),
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
@@ -831,6 +834,15 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     print("Valid subnets %s" % val_subnets)
     validate_keypair(key_name)
     bld_map = []
+    try:
+        tags = json.loads(os.environ.get('TAGS'))
+    except ValueError:
+        tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+    else:
+        if not tags:
+            tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+        for tag in tags:
+            tag['PropagateAtLaunch'] = True
     disks = json.loads(os.environ.get('DISKS'))
     if disks:
         for disk in disks:
@@ -892,7 +904,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                 MaxSize=1,
                 DesiredCapacity=0 if attach_instance else 1,
                 VPCZoneIdentifier=val_subnets,
-                Tags=[{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+                Tags=tags
             )
         except botocore.exceptions.ClientError as err:
             if "AlreadyExists" in str(err):
