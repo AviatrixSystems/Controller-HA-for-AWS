@@ -489,11 +489,19 @@ def run_initial_setup(ip_addr, cid, version):
                  "target_version": version,
                  "action": "initial_setup",
                  "subaction": "run"}
-
     print("Trying to run initial setup %s\n" % str(post_data))
-
-    response = requests.post(base_url, data=post_data, verify=False)
-    response_json = response.json()
+    try:
+        response = requests.post(base_url, data=post_data, verify=False)
+    except requests.exceptions.ConnectionError as err:
+        if "the server has closed the connection" in str(err):
+            print("Server closed the connection while executing initial setup API."
+                  " Ignoring response")
+            response_json = {'return': True}
+            time.sleep(WAIT_DELAY)
+        else:
+            raise AvxError("Failed to execute initial setup: " + str(err))
+    else:
+        response_json = response.json()
     print(response_json)
 
     if response_json.get('return') is True:
