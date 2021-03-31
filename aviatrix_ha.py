@@ -263,7 +263,7 @@ def create_new_sg(client):
                  'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
             ])
     except botocore.exceptions.ClientError as err:
-        if "InvalidGroup.Duplicate" in str(err) or "InvalidPermission.Duplicate"in str(err):
+        if "InvalidGroup.Duplicate" in str(err) or "InvalidPermission.Duplicate" in str(err):
             pass
         else:
             raise AvxError(str(err)) from err
@@ -359,7 +359,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
                           "Size": vol["Size"],
                           "Iops": vol.get("Iops", ""),
                           "Encrypted": vol["Encrypted"],
-                         })
+                          })
 
     env_dict = {
         'EIP': eip,
@@ -431,7 +431,7 @@ def verify_backup_file(controller_instanceobj):
         retrieve_controller_version(version_file)
         s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
         try:
-            with open('/tmp/tmp.enc', 'w') as data:
+            with open('/tmp/tmp.enc', 'wb') as data:
                 s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), s3_file, data)
         except botocore.exceptions.ClientError as err:
             if err.response['Error']['Code'] == "404":
@@ -451,7 +451,7 @@ def retrieve_controller_version(version_file):
     print("Retrieving version from file " + str(version_file))
     s3c = boto3.client('s3')
     try:
-        with open('/tmp/version_ctrlha.txt', 'w') as data:
+        with open('/tmp/version_ctrlha.txt', 'wb') as data:
             s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), version_file,
                                  data)
     except botocore.exceptions.ClientError as err:
@@ -547,7 +547,7 @@ def restore_security_group_access(client, sg_id):
                             'FromPort': 443,
                             'ToPort': 443,
                             'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
-                          ])
+                           ])
     except botocore.exceptions.ClientError as err:
         if "InvalidPermission.NotFound" not in str(err) and "InvalidGroup" not in str(err):
             print(str(err))
@@ -1067,9 +1067,9 @@ def send_response(event, context, response_status, reason='',
         }
     )
     opener = build_opener(HTTPHandler)
-    request = Request(event['ResponseURL'], data=response_body)
+    request = Request(event['ResponseURL'], data=response_body.encode())
     request.add_header('Content-Type', '')
-    request.add_header('Content-Length', len(response_body))
+    request.add_header('Content-Length', len(response_body.encode()))
     request.get_method = lambda: 'PUT'
     try:
         response = opener.open(request)

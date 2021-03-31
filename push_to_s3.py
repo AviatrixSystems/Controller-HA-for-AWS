@@ -68,6 +68,7 @@ def push_lambda_file_s3():
         print (region)
         threading.Thread(target=push_lambda_file_in_region, args=[region]).start()
 
+
 def push_lambda_file_in_region(region):
     """ Push"""
     bucket_name = BUCKET_PREFIX + region
@@ -90,7 +91,7 @@ def push_lambda_file_in_region(region):
     dst_file = LAMBDA_ZIP_FILE
     try:
         if sys.argv[1] == "--dev":
-            print ("Pushing to dev bucket")
+            print("Pushing to dev bucket")
             dst_file = LAMBDA_ZIP_DEV_FILE
     except IndexError:
         pass
@@ -98,7 +99,7 @@ def push_lambda_file_in_region(region):
     try:
         s3_.upload_file(LAMBDA_ZIP_FILE, bucket_name, dst_file, ExtraArgs={'ACL': 'public-read'})
     except ClientError:
-        print (traceback.format_exc())
+        print(traceback.format_exc())
 
     # Validate file push
     url = f'https://{bucket_name}.s3.amazonaws.com/{dst_file}'
@@ -106,7 +107,7 @@ def push_lambda_file_in_region(region):
         requests.get(url)
     except Exception:
         print("Lambda zip validation failed for %s" % region)
-    print ("pushed successfully to " + region)
+    print("pushed successfully to " + region)
 
 
 if __name__ == '__main__':
