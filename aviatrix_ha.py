@@ -113,7 +113,7 @@ def _lambda_handler(event, context):
             sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
             print(sns_msg_event)
         except (KeyError, IndexError, ValueError) as err:
-            raise AvxError("1.Could not parse SNS message %s" % str(err))
+            raise AvxError("1.Could not parse SNS message %s" % str(err)) from err
         if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
             print("Not from launch error. Exiting")
             return
@@ -143,7 +143,7 @@ def _lambda_handler(event, context):
             sns_msg_event = sns_msg_json['Event']
             sns_msg_desc = sns_msg_json.get('Description', "")
         except (KeyError, IndexError, ValueError) as err:
-            raise AvxError("2. Could not parse SNS message %s" % str(err))
+            raise AvxError("2. Could not parse SNS message %s" % str(err)) from err
         print("SNS Event %s Description %s " % (sns_msg_event, sns_msg_desc))
         if sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH":
             print("Instance launched from Autoscaling")
@@ -248,7 +248,7 @@ def create_new_sg(client):
             rsp = client.describe_security_groups(GroupNames=[instance_name])
             sg_id = rsp['SecurityGroups'][0]['GroupId']
         else:
-            raise AvxError(str(err))
+            raise AvxError(str(err)) from err
     try:
         client.authorize_security_group_ingress(
             GroupId=sg_id,
@@ -266,7 +266,7 @@ def create_new_sg(client):
         if "InvalidGroup.Duplicate" in str(err) or "InvalidPermission.Duplicate"in str(err):
             pass
         else:
-            raise AvxError(str(err))
+            raise AvxError(str(err)) from err
     return sg_id
 
 
@@ -313,7 +313,7 @@ def login_to_controller(ip_addr, username, pwd):
     except Exception as err:
         print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
                                                                       str(err)))
-        raise AvxError(str(err))
+        raise AvxError(str(err)) from err
     response_json = response.json()
     print(response_json)
     try:
@@ -321,7 +321,7 @@ def login_to_controller(ip_addr, username, pwd):
         print("Created new session with CID {}\n".format(cid))
     except KeyError as err:
         print("Unable to create session. {}".format(err))
-        raise AvxError("Unable to create session. {}".format(err))
+        raise AvxError("Unable to create session. {}".format(err)) from err
     else:
         return cid
 
@@ -457,7 +457,7 @@ def retrieve_controller_version(version_file):
     except botocore.exceptions.ClientError as err:
         if err.response['Error']['Code'] == "404":
             print("The object does not exist.")
-            raise AvxError("The cloudx version file does not exist")
+            raise AvxError("The cloudx version file does not exist") from err
         raise
     if not os.path.exists('/tmp/version_ctrlha.txt'):
         raise AvxError("Unable to open version file")
@@ -469,8 +469,8 @@ def retrieve_controller_version(version_file):
     print("Parsing version")
     try:
         version = ".".join(((buf[12:]).split("."))[:-1])
-    except (KeyboardInterrupt, IndexError, ValueError):
-        raise AvxError("Could not decode version")
+    except (KeyboardInterrupt, IndexError, ValueError) as err:
+        raise AvxError("Could not decode version") from err
     else:
         print("Parsed version sucessfully " + str(version))
         return version
@@ -502,7 +502,7 @@ def run_initial_setup(ip_addr, cid, version):
             response_json = {'return': True}
             time.sleep(WAIT_DELAY)
         else:
-            raise AvxError("Failed to execute initial setup: " + str(err))
+            raise AvxError("Failed to execute initial setup: " + str(err)) from err
     else:
         response_json = response.json()
     print(response_json)
@@ -818,7 +818,7 @@ def validate_keypair(key_name):
         client = boto3.client('ec2')
         response = client.describe_key_pairs()
     except botocore.exceptions.ClientError as err:
-        raise AvxError(str(err))
+        raise AvxError(str(err)) from err
     key_aws_list = [key['KeyName'] for key in response['KeyPairs']]
     if key_name not in key_aws_list:
         print("Key does not exist. Creating")
@@ -826,7 +826,7 @@ def validate_keypair(key_name):
             client = boto3.client('ec2')
             client.create_key_pair(KeyName=key_name)
         except botocore.exceptions.ClientError as err:
-            raise AvxError(str(err))
+            raise AvxError(str(err)) from err
     else:
         print("Key exists")
 
@@ -841,7 +841,7 @@ def validate_subnets(subnet_list):
         client = boto3.client('ec2')
         response = client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     except botocore.exceptions.ClientError as err:
-        raise AvxError(str(err))
+        raise AvxError(str(err)) from err
     sub_aws_list = [sub['SubnetId'] for sub in response['Subnets']]
     sub_list_new = [sub for sub in subnet_list if sub.strip() in sub_aws_list]
     if not sub_list_new:
@@ -1012,7 +1012,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
         if "AutoScalingGroup name not found" in str(err):
             print('ASG already deleted')
         else:
-            raise AvxError(str(err))
+            raise AvxError(str(err)) from err
     print("Autoscaling group deleted")
     try:
         asg_client.delete_launch_configuration(LaunchConfigurationName=lc_name)
