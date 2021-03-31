@@ -5,7 +5,9 @@ import os
 import uuid
 import json
 import threading
-import urllib.request, urllib.error, urllib.parse
+import urllib.request
+import urllib.error
+import urllib.parse
 from urllib.error import HTTPError
 from urllib.request import build_opener, HTTPHandler, Request
 import traceback
@@ -26,7 +28,6 @@ AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.jso
 
 class AvxError(Exception):
     """ Error class for Aviatrix exceptions"""
-    pass
 
 
 print('Loading function')
@@ -100,24 +101,23 @@ def _lambda_handler(event, context):
                 print("Create Event")
                 send_response(event, context, 'FAILED', err_reason)
                 return
-            else:
-                print("Ignoring delete CFT for no Controller")
-                # While deleting cloud formation template, this lambda function
-                # will be called to delete AssignEIP resource. If the controller
-                # instance is not present, then cloud formation will be stuck
-                # in deletion.So just pass in that case.
-                send_response(event, context, 'SUCCESS', '')
+            print("Ignoring delete CFT for no Controller")
+            # While deleting cloud formation template, this lambda function
+            # will be called to delete AssignEIP resource. If the controller
+            # instance is not present, then cloud formation will be stuck
+            # in deletion.So just pass in that case.
+            send_response(event, context, 'SUCCESS', '')
             return
-        else:
-            try:
-                sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
-                print(sns_msg_event)
-            except (KeyError, IndexError, ValueError) as err:
-                raise AvxError("1.Could not parse SNS message %s" % str(err))
-            if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
-                print("Not from launch error. Exiting")
-                return
-            print("From the instance launch error. Will attempt to re-create Auto scaling group")
+
+        try:
+            sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
+            print(sns_msg_event)
+        except (KeyError, IndexError, ValueError) as err:
+            raise AvxError("1.Could not parse SNS message %s" % str(err))
+        if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
+            print("Not from launch error. Exiting")
+            return
+        print("From the instance launch error. Will attempt to re-create Auto scaling group")
 
     if cf_request:
         try:
@@ -458,8 +458,7 @@ def retrieve_controller_version(version_file):
         if err.response['Error']['Code'] == "404":
             print("The object does not exist.")
             raise AvxError("The cloudx version file does not exist")
-        else:
-            raise
+        raise
     if not os.path.exists('/tmp/version_ctrlha.txt'):
         raise AvxError("Unable to open version file")
     with open("/tmp/version_ctrlha.txt") as fileh:
@@ -520,24 +519,23 @@ def temp_add_security_group_access(client, controller_instanceobj, api_private_a
     sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
     if api_private_access == "True":
         return True, sgs[0]
-    else:
-        if not sgs:
-            raise AvxError("No security groups were attached to controller")
-        try:
-            client.authorize_security_group_ingress(
-                GroupId=sgs[0],
-                IpPermissions=[{'IpProtocol': 'tcp',
-                                'FromPort': 443,
-                                'ToPort': 443,
-                                'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
-                              ])
-        except botocore.exceptions.ClientError as err:
-            if "InvalidPermission.Duplicate" in str(err):
-                return True, sgs[0]
-            else:
-                print(str(err))
-                raise
-        return False, sgs[0]
+
+    if not sgs:
+        raise AvxError("No security groups were attached to controller")
+    try:
+        client.authorize_security_group_ingress(
+            GroupId=sgs[0],
+            IpPermissions=[{'IpProtocol': 'tcp',
+                            'FromPort': 443,
+                            'ToPort': 443,
+                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+                          ])
+    except botocore.exceptions.ClientError as err:
+        if "InvalidPermission.Duplicate" in str(err):
+            return True, sgs[0]
+        print(str(err))
+        raise
+    return False, sgs[0]
 
 
 def restore_security_group_access(client, sg_id):
@@ -766,7 +764,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 print("Updated lambda configuration")
                 print("Controller HA event has been successfully handled")
                 return
-            elif response_json.get('reason', '') == 'account_password required.':
+            if response_json.get('reason', '') == 'account_password required.':
                 print("API is not ready yet, requires account_password")
                 total_time += WAIT_DELAY
             elif response_json.get('reason', '') == 'valid action required':
@@ -784,8 +782,6 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                       str(response_json.get('reason', '')))
                 return
         raise AvxError("Restore failed, did not update lambda config")
-    except Exception:
-        raise
     finally:
         if not duplicate:
             print("Reverting sg %s" % sg_modified)
@@ -852,11 +848,9 @@ def validate_subnets(subnet_list):
         ctrl_subnet = os.environ.get('CTRL_SUBNET')
         if ctrl_subnet not in sub_aws_list:
             raise AvxError("All subnets %s or controller subnet %s are not found in vpc %s")
-        else:
-            print("All subnets are invalid. Using existing controller subnet")
-            return ctrl_subnet
-    else:
-        return ",".join(sub_list_new)
+        print("All subnets are invalid. Using existing controller subnet")
+        return ctrl_subnet
+    return ",".join(sub_list_new)
 
 
 def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
@@ -955,9 +949,6 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                     time.sleep(10)
             else:
                 raise
-
-        except Exception:
-            raise
         else:
             break
 
