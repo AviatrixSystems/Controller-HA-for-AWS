@@ -16,7 +16,7 @@ from urllib3.exceptions import InsecureRequestWarning
 import requests
 import boto3
 import botocore
-
+import version
 urllib3.disable_warnings(InsecureRequestWarning)
 
 MAX_LOGIN_TIMEOUT = 800
@@ -53,7 +53,7 @@ def _lambda_handler(event, context):
          created after controller failover. """
     # scheduled_event = False
     sns_event = False
-    print("Event: %s" % event)
+    print("Version: %s Event: %s" % (version.VERSION, event))
     try:
         cf_request = event["StackId"]
         print("From CFT")
