@@ -602,8 +602,20 @@ def create_cloud_account(cid, controller_ip, account_name):
                  "cloud_type": 1,
                  "aws_iam": "true"}
     print("Trying to create account with data %s\n" % str(post_data))
-    response = requests.post(base_url, data=post_data, verify=False)
-    return response.json()
+    try:
+        response = requests.post(base_url, data=post_data, verify=False)
+    except requests.exceptions.ConnectionError as err:
+        if "the server has closed the connection" in str(err):
+            print("Server closed the connection while executing create account API."
+                  " Ignoring response")
+            output = {"result": True}
+            time.sleep(WAIT_DELAY)
+        else:
+            output = {"result": False, "reason": str(err)}
+    else:
+        output = response.json()
+
+    return output
 
 
 def restore_backup(cid, controller_ip, s3_file, account_name):
@@ -617,9 +629,48 @@ def restore_backup(cid, controller_ip, s3_file, account_name):
         "bucket_name": os.environ.get('S3_BUCKET_BACK')}
     print("Trying to restore config with data %s\n" % str(restore_data))
     base_url = "https://" + controller_ip + "/v1/api"
-    response = requests.post(base_url, data=restore_data, verify=False)
+    try:
+        response = requests.post(base_url, data=restore_data, verify=False)
+    except requests.exceptions.ConnectionError as err:
+        if "the server has closed the connection" in str(err):
+            print("Server closed the connection while executing restore_cloudx_config API."
+                  " Ignoring response")
+            response_json = {"result": True}
+            time.sleep(WAIT_DELAY)
+        else:
+            print(str(err))
+            response_json = {"result": False, "reason": str(err)}
+    else:
+        response_json = response.json()
 
-    return response.json()
+    return response_json
+
+
+def set_customer_id(cid, controller_api_ip):
+    """ Set the customer ID if set in environment to migrate to a different AMI type"""
+    print("Setting up Customer ID")
+    base_url = "https://" + controller_api_ip + "/v1/api"
+    post_data = {"CID": cid,
+                 "action": "setup_customer_id",
+                 "customer_id": os.environ.get("CUSTOMER_ID")}
+    try:
+        response = requests.post(base_url, data=post_data, verify=False)
+    except requests.exceptions.ConnectionError as err:
+        if "the server has closed the connection" in str(err):
+            print("Server closed the connection while executing setup_customer_id API."
+                  " Ignoring response")
+            response_json = {"result": True}
+            time.sleep(WAIT_DELAY)
+        else:
+            response_json = {"result": False, "reason": str(err)}
+    else:
+        response_json = response.json()
+
+    if response_json.get('return') is True:
+        print("Customer ID successfully programmed")
+    else:
+        print("Customer ID programming failed. DB restore will fail: " +
+              response_json.get('reason', ""))
 
 
 def handle_ha_event(client, lambda_client, controller_instanceobj, context):
@@ -699,22 +750,11 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 print(response_json)
                 if response_json.get('return', False) is True:
                     created_temp_acc = True
+                elif "already exists" in response_json.get('reason', ''):
+                    created_temp_acc = True
             if created_temp_acc:
-                if os.environ.get("CUSTOMER_ID"):
-                    print("Setting up Customer ID")
-                    base_url = "https://" + controller_api_ip + "/v1/api"
-                    post_data = {"CID": cid,
-                                "action": "setup_customer_id",
-                                "customer_id": os.environ.get("CUSTOMER_ID")
-                                }
-                    response = requests.post(base_url, data=post_data, verify=False)
-                    response_json = response.json()
-
-                    if response_json.get('return') is True:
-                        print("Customer ID successfully programmed")
-                    else:
-                        print("Customer ID programming failed. DB restore will fail")
-
+                if os.environ.get("CUSTOMER_ID"):  # Support for license migration scenario
+                    set_customer_id(cid, controller_api_ip)
                 response_json = restore_backup(cid, controller_api_ip, s3_file, temp_acc_name)
                 print(response_json)
             if response_json.get('return', False) is True and created_temp_acc:
