@@ -176,7 +176,7 @@
           "FunctionName" : { "Fn::Join" : [ "-", [ { "Ref" : "AviatrixTagParam" }, "ha" ] ] },
           "Handler" : "aviatrix_ha.lambda_handler",
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
-          "Runtime" : "python2.7",
+          "Runtime" : "python3.8",
           "Timeout" : "900"
        }
     },

@@ -1,12 +1,15 @@
 """ Aviatrix Controller HA Lambda script """
-from __future__ import print_function
+
 import time
 import os
 import uuid
 import json
 import threading
-import urllib2
-from urllib2 import HTTPError, build_opener, HTTPHandler, Request
+import urllib.request
+import urllib.error
+import urllib.parse
+from urllib.error import HTTPError
+from urllib.request import build_opener, HTTPHandler, Request
 import traceback
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
@@ -25,7 +28,6 @@ AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.jso
 
 class AvxError(Exception):
     """ Error class for Aviatrix exceptions"""
-    pass
 
 
 print('Loading function')
@@ -99,24 +101,23 @@ def _lambda_handler(event, context):
                 print("Create Event")
                 send_response(event, context, 'FAILED', err_reason)
                 return
-            else:
-                print("Ignoring delete CFT for no Controller")
-                # While deleting cloud formation template, this lambda function
-                # will be called to delete AssignEIP resource. If the controller
-                # instance is not present, then cloud formation will be stuck
-                # in deletion.So just pass in that case.
-                send_response(event, context, 'SUCCESS', '')
+            print("Ignoring delete CFT for no Controller")
+            # While deleting cloud formation template, this lambda function
+            # will be called to delete AssignEIP resource. If the controller
+            # instance is not present, then cloud formation will be stuck
+            # in deletion.So just pass in that case.
+            send_response(event, context, 'SUCCESS', '')
             return
-        else:
-            try:
-                sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
-                print(sns_msg_event)
-            except (KeyError, IndexError, ValueError) as err:
-                raise AvxError("1.Could not parse SNS message %s" % str(err))
-            if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
-                print("Not from launch error. Exiting")
-                return
-            print("From the instance launch error. Will attempt to re-create Auto scaling group")
+
+        try:
+            sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
+            print(sns_msg_event)
+        except (KeyError, IndexError, ValueError) as err:
+            raise AvxError("1.Could not parse SNS message %s" % str(err)) from err
+        if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
+            print("Not from launch error. Exiting")
+            return
+        print("From the instance launch error. Will attempt to re-create Auto scaling group")
 
     if cf_request:
         try:
@@ -142,7 +143,7 @@ def _lambda_handler(event, context):
             sns_msg_event = sns_msg_json['Event']
             sns_msg_desc = sns_msg_json.get('Description', "")
         except (KeyError, IndexError, ValueError) as err:
-            raise AvxError("2. Could not parse SNS message %s" % str(err))
+            raise AvxError("2. Could not parse SNS message %s" % str(err)) from err
         print("SNS Event %s Description %s " % (sns_msg_event, sns_msg_desc))
         if sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH":
             print("Instance launched from Autoscaling")
@@ -225,7 +226,7 @@ def _check_ami_id(ami_id):
     resp = requests.get(AMI_ID)
     ami_dict = json.loads(resp.content)
     for image_type in ami_dict:
-        if ami_id in ami_dict[image_type].values():
+        if ami_id in list(ami_dict[image_type].values()):
             print("AMI is valid")
             return True
     print("AMI is not latest. Cannot enable Controller HA. Please backup restore to the latest AMI"
@@ -247,7 +248,7 @@ def create_new_sg(client):
             rsp = client.describe_security_groups(GroupNames=[instance_name])
             sg_id = rsp['SecurityGroups'][0]['GroupId']
         else:
-            raise AvxError(str(err))
+            raise AvxError(str(err)) from err
     try:
         client.authorize_security_group_ingress(
             GroupId=sg_id,
@@ -262,10 +263,10 @@ def create_new_sg(client):
                  'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
             ])
     except botocore.exceptions.ClientError as err:
-        if "InvalidGroup.Duplicate" in str(err) or "InvalidPermission.Duplicate"in str(err):
+        if "InvalidGroup.Duplicate" in str(err) or "InvalidPermission.Duplicate" in str(err):
             pass
         else:
-            raise AvxError(str(err))
+            raise AvxError(str(err)) from err
     return sg_id
 
 
@@ -306,13 +307,13 @@ def login_to_controller(ip_addr, username, pwd):
     """ Logs into the controller and returns the cid"""
     base_url = "https://" + ip_addr + "/v1/api"
     url = base_url + "?action=login&username=" + username + "&password=" +\
-          urllib2.quote(pwd, '%')
+          urllib.parse.quote(pwd, '%')
     try:
         response = requests.get(url, verify=False)
     except Exception as err:
         print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
                                                                       str(err)))
-        raise AvxError(str(err))
+        raise AvxError(str(err)) from err
     response_json = response.json()
     print(response_json)
     try:
@@ -320,7 +321,7 @@ def login_to_controller(ip_addr, username, pwd):
         print("Created new session with CID {}\n".format(cid))
     except KeyError as err:
         print("Unable to create session. {}".format(err))
-        raise AvxError("Unable to create session. {}".format(err))
+        raise AvxError("Unable to create session. {}".format(err)) from err
     else:
         return cid
 
@@ -358,7 +359,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
                           "Size": vol["Size"],
                           "Iops": vol.get("Iops", ""),
                           "Encrypted": vol["Encrypted"],
-                         })
+                          })
 
     env_dict = {
         'EIP': eip,
@@ -430,7 +431,7 @@ def verify_backup_file(controller_instanceobj):
         retrieve_controller_version(version_file)
         s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
         try:
-            with open('/tmp/tmp.enc', 'w') as data:
+            with open('/tmp/tmp.enc', 'wb') as data:
                 s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), s3_file, data)
         except botocore.exceptions.ClientError as err:
             if err.response['Error']['Code'] == "404":
@@ -450,15 +451,14 @@ def retrieve_controller_version(version_file):
     print("Retrieving version from file " + str(version_file))
     s3c = boto3.client('s3')
     try:
-        with open('/tmp/version_ctrlha.txt', 'w') as data:
+        with open('/tmp/version_ctrlha.txt', 'wb') as data:
             s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), version_file,
                                  data)
     except botocore.exceptions.ClientError as err:
         if err.response['Error']['Code'] == "404":
             print("The object does not exist.")
-            raise AvxError("The cloudx version file does not exist")
-        else:
-            raise
+            raise AvxError("The cloudx version file does not exist") from err
+        raise
     if not os.path.exists('/tmp/version_ctrlha.txt'):
         raise AvxError("Unable to open version file")
     with open("/tmp/version_ctrlha.txt") as fileh:
@@ -469,8 +469,8 @@ def retrieve_controller_version(version_file):
     print("Parsing version")
     try:
         version = ".".join(((buf[12:]).split("."))[:-1])
-    except (KeyboardInterrupt, IndexError, ValueError):
-        raise AvxError("Could not decode version")
+    except (KeyboardInterrupt, IndexError, ValueError) as err:
+        raise AvxError("Could not decode version") from err
     else:
         print("Parsed version sucessfully " + str(version))
         return version
@@ -496,13 +496,13 @@ def run_initial_setup(ip_addr, cid, version):
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:
-        if "the server has closed the connection" in str(err):
+        if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing initial setup API."
                   " Ignoring response")
             response_json = {'return': True}
             time.sleep(WAIT_DELAY)
         else:
-            raise AvxError("Failed to execute initial setup: " + str(err))
+            raise AvxError("Failed to execute initial setup: " + str(err)) from err
     else:
         response_json = response.json()
     print(response_json)
@@ -519,24 +519,23 @@ def temp_add_security_group_access(client, controller_instanceobj, api_private_a
     sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
     if api_private_access == "True":
         return True, sgs[0]
-    else:
-        if not sgs:
-            raise AvxError("No security groups were attached to controller")
-        try:
-            client.authorize_security_group_ingress(
-                GroupId=sgs[0],
-                IpPermissions=[{'IpProtocol': 'tcp',
-                                'FromPort': 443,
-                                'ToPort': 443,
-                                'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
-                              ])
-        except botocore.exceptions.ClientError as err:
-            if "InvalidPermission.Duplicate" in str(err):
-                return True, sgs[0]
-            else:
-                print(str(err))
-                raise
-        return False, sgs[0]
+
+    if not sgs:
+        raise AvxError("No security groups were attached to controller")
+    try:
+        client.authorize_security_group_ingress(
+            GroupId=sgs[0],
+            IpPermissions=[{'IpProtocol': 'tcp',
+                            'FromPort': 443,
+                            'ToPort': 443,
+                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+                          ])
+    except botocore.exceptions.ClientError as err:
+        if "InvalidPermission.Duplicate" in str(err):
+            return True, sgs[0]
+        print(str(err))
+        raise
+    return False, sgs[0]
 
 
 def restore_security_group_access(client, sg_id):
@@ -548,7 +547,7 @@ def restore_security_group_access(client, sg_id):
                             'FromPort': 443,
                             'ToPort': 443,
                             'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
-                          ])
+                           ])
     except botocore.exceptions.ClientError as err:
         if "InvalidPermission.NotFound" not in str(err) and "InvalidGroup" not in str(err):
             print(str(err))
@@ -605,7 +604,7 @@ def create_cloud_account(cid, controller_ip, account_name):
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:
-        if "the server has closed the connection" in str(err):
+        if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing create account API."
                   " Ignoring response")
             output = {"result": True}
@@ -632,7 +631,7 @@ def restore_backup(cid, controller_ip, s3_file, account_name):
     try:
         response = requests.post(base_url, data=restore_data, verify=False)
     except requests.exceptions.ConnectionError as err:
-        if "the server has closed the connection" in str(err):
+        if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing restore_cloudx_config API."
                   " Ignoring response")
             response_json = {"result": True}
@@ -656,7 +655,7 @@ def set_customer_id(cid, controller_api_ip):
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:
-        if "the server has closed the connection" in str(err):
+        if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing setup_customer_id API."
                   " Ignoring response")
             response_json = {"result": True}
@@ -765,7 +764,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 print("Updated lambda configuration")
                 print("Controller HA event has been successfully handled")
                 return
-            elif response_json.get('reason', '') == 'account_password required.':
+            if response_json.get('reason', '') == 'account_password required.':
                 print("API is not ready yet, requires account_password")
                 total_time += WAIT_DELAY
             elif response_json.get('reason', '') == 'valid action required':
@@ -783,8 +782,6 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                       str(response_json.get('reason', '')))
                 return
         raise AvxError("Restore failed, did not update lambda config")
-    except Exception:
-        raise
     finally:
         if not duplicate:
             print("Reverting sg %s" % sg_modified)
@@ -821,7 +818,7 @@ def validate_keypair(key_name):
         client = boto3.client('ec2')
         response = client.describe_key_pairs()
     except botocore.exceptions.ClientError as err:
-        raise AvxError(str(err))
+        raise AvxError(str(err)) from err
     key_aws_list = [key['KeyName'] for key in response['KeyPairs']]
     if key_name not in key_aws_list:
         print("Key does not exist. Creating")
@@ -829,7 +826,7 @@ def validate_keypair(key_name):
             client = boto3.client('ec2')
             client.create_key_pair(KeyName=key_name)
         except botocore.exceptions.ClientError as err:
-            raise AvxError(str(err))
+            raise AvxError(str(err)) from err
     else:
         print("Key exists")
 
@@ -844,18 +841,16 @@ def validate_subnets(subnet_list):
         client = boto3.client('ec2')
         response = client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     except botocore.exceptions.ClientError as err:
-        raise AvxError(str(err))
+        raise AvxError(str(err)) from err
     sub_aws_list = [sub['SubnetId'] for sub in response['Subnets']]
     sub_list_new = [sub for sub in subnet_list if sub.strip() in sub_aws_list]
     if not sub_list_new:
         ctrl_subnet = os.environ.get('CTRL_SUBNET')
         if ctrl_subnet not in sub_aws_list:
             raise AvxError("All subnets %s or controller subnet %s are not found in vpc %s")
-        else:
-            print("All subnets are invalid. Using existing controller subnet")
-            return ctrl_subnet
-    else:
-        return ",".join(sub_list_new)
+        print("All subnets are invalid. Using existing controller subnet")
+        return ctrl_subnet
+    return ",".join(sub_list_new)
 
 
 def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
@@ -954,9 +949,6 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                     time.sleep(10)
             else:
                 raise
-
-        except Exception:
-            raise
         else:
             break
 
@@ -1020,7 +1012,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
         if "AutoScalingGroup name not found" in str(err):
             print('ASG already deleted')
         else:
-            raise AvxError(str(err))
+            raise AvxError(str(err)) from err
     print("Autoscaling group deleted")
     try:
         asg_client.delete_launch_configuration(LaunchConfigurationName=lc_name)
@@ -1075,9 +1067,9 @@ def send_response(event, context, response_status, reason='',
         }
     )
     opener = build_opener(HTTPHandler)
-    request = Request(event['ResponseURL'], data=response_body)
+    request = Request(event['ResponseURL'], data=response_body.encode())
     request.add_header('Content-Type', '')
-    request.add_header('Content-Length', len(response_body))
+    request.add_header('Content-Length', len(response_body.encode()))
     request.get_method = lambda: 'PUT'
     try:
         response = opener.open(request)
