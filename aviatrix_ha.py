@@ -496,7 +496,7 @@ def run_initial_setup(ip_addr, cid, version):
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:
-        if "the server has closed the connection" in str(err):
+        if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing initial setup API."
                   " Ignoring response")
             response_json = {'return': True}
@@ -604,7 +604,7 @@ def create_cloud_account(cid, controller_ip, account_name):
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:
-        if "the server has closed the connection" in str(err):
+        if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing create account API."
                   " Ignoring response")
             output = {"result": True}
@@ -631,7 +631,7 @@ def restore_backup(cid, controller_ip, s3_file, account_name):
     try:
         response = requests.post(base_url, data=restore_data, verify=False)
     except requests.exceptions.ConnectionError as err:
-        if "the server has closed the connection" in str(err):
+        if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing restore_cloudx_config API."
                   " Ignoring response")
             response_json = {"result": True}
@@ -655,7 +655,7 @@ def set_customer_id(cid, controller_api_ip):
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:
-        if "the server has closed the connection" in str(err):
+        if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing setup_customer_id API."
                   " Ignoring response")
             response_json = {"result": True}
