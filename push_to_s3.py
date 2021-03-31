@@ -1,20 +1,21 @@
 """ Push script for lambda files
-use as ACCESS_KEY=xxxx SECRET_KEY=yyyy python push_to_s3.py
+use as ACCESS_KEY=xxxx SECRET_KEY=yyyy python3 push_to_s3.py
 """
 from __future__ import print_function
 import os
 import sys
 import traceback
 import threading
+import requests
 import boto3
 from botocore.exceptions import ClientError
 
 try:
     ACCESS_KEY = os.environ['ACCESS_KEY']
     SECRET_KEY = os.environ['SECRET_KEY']
-except KeyError:
+except KeyError as err:
     raise Exception("use as ACCESS_KEY=xxxx SECRET_KEY=yyyy python push_to_s3.py."
-                    " For dev add --dev")
+                    " For dev add --dev") from err
 
 BUCKET_PREFIX = "aviatrix-lambda-"
 LAMBDA_ZIP_FILE = 'aviatrix_ha.zip'
@@ -47,6 +48,13 @@ def push_cft_s3():
                         ExtraArgs={'ACL': 'public-read'})
     except ClientError:
         print(traceback.format_exc())
+
+    # Validate file push
+    url = f'https://{CFT_BUCKET_NAME}.s3.amazonaws.com/{dst_file}'
+    try:
+        requests.get(url)
+    except Exception:
+        print("Validation failed for CFT")
     print("Pushed CFT")
 
 
@@ -59,7 +67,6 @@ def push_lambda_file_s3():
     for region in regions:
         print (region)
         threading.Thread(target=push_lambda_file_in_region, args=[region]).start()
-
 
 def push_lambda_file_in_region(region):
     """ Push"""
@@ -92,6 +99,13 @@ def push_lambda_file_in_region(region):
         s3_.upload_file(LAMBDA_ZIP_FILE, bucket_name, dst_file, ExtraArgs={'ACL': 'public-read'})
     except ClientError:
         print (traceback.format_exc())
+
+    # Validate file push
+    url = f'https://{bucket_name}.s3.amazonaws.com/{dst_file}'
+    try:
+        requests.get(url)
+    except Exception:
+        print("Lambda zip validation failed for %s" % region)
     print ("pushed successfully to " + region)
 
 
