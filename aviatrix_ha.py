@@ -607,10 +607,10 @@ def create_cloud_account(cid, controller_ip, account_name):
         if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing create account API."
                   " Ignoring response")
-            output = {"result": True}
+            output = {"return": True}
             time.sleep(WAIT_DELAY)
         else:
-            output = {"result": False, "reason": str(err)}
+            output = {"return": False, "reason": str(err)}
     else:
         output = response.json()
 
@@ -634,11 +634,11 @@ def restore_backup(cid, controller_ip, s3_file, account_name):
         if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing restore_cloudx_config API."
                   " Ignoring response")
-            response_json = {"result": True}
+            response_json = {"return": True}
             time.sleep(WAIT_DELAY)
         else:
             print(str(err))
-            response_json = {"result": False, "reason": str(err)}
+            response_json = {"return": False, "reason": str(err)}
     else:
         response_json = response.json()
 
@@ -658,10 +658,10 @@ def set_customer_id(cid, controller_api_ip):
         if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing setup_customer_id API."
                   " Ignoring response")
-            response_json = {"result": True}
+            response_json = {"return": True}
             time.sleep(WAIT_DELAY)
         else:
-            response_json = {"result": False, "reason": str(err)}
+            response_json = {"return": False, "reason": str(err)}
     else:
         response_json = response.json()
 
