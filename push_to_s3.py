@@ -33,16 +33,23 @@ def push_cft_s3():
     s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
                        region_name=CFT_BUCKET_REGION)
     dst_file = CFT_FILE_NAME
+    dev = False
     try:
         if sys.argv[1] == "--dev":
             print("Pushing CFT to dev bucket")
+            dev = True
             dst_file = CFT_DEV_FILE_NAME
             with open(CFT_FILE_NAME) as fileh:
                 if LAMBDA_ZIP_DEV_FILE not in fileh.read():
-                    print(LAMBDA_ZIP_DEV_FILE + " not found in lambda in CFT")
-                    return
+                    raise Exception(LAMBDA_ZIP_DEV_FILE + " not found in lambda in CFT")
+
     except IndexError:
         pass
+    if not dev:
+        with open(CFT_FILE_NAME) as fileh:
+            if LAMBDA_ZIP_DEV_FILE in fileh.read():
+                raise Exception(LAMBDA_ZIP_DEV_FILE + " found in lambda in CFT. Not pushing")
+
     try:
         s3_.upload_file(CFT_FILE_NAME, CFT_BUCKET_NAME, dst_file,
                         ExtraArgs={'ACL': 'public-read'})
