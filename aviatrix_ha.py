@@ -23,6 +23,7 @@ MAX_LOGIN_TIMEOUT = 800
 WAIT_DELAY = 30
 
 INITIAL_SETUP_WAIT = 180
+INITIAL_SETUP_DELAY = 10
 AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json'
 
 
@@ -306,7 +307,7 @@ def update_env_dict(lambda_client, context, replace_dict):
 def login_to_controller(ip_addr, username, pwd):
     """ Logs into the controller and returns the cid"""
     base_url = "https://" + ip_addr + "/v1/api"
-    url = base_url + "?action=login&username=" + username + "&password=" +\
+    url = base_url + "?action=login&username=" + username + "&password=" + \
           urllib.parse.quote(pwd, '%')
     try:
         response = requests.get(url, verify=False)
@@ -322,8 +323,7 @@ def login_to_controller(ip_addr, username, pwd):
     except KeyError as err:
         print("Unable to create session. {}".format(err))
         raise AvxError("Unable to create session. {}".format(err)) from err
-    else:
-        return cid
+    return cid
 
 
 def set_environ(client, lambda_client, controller_instanceobj, context,
@@ -468,43 +468,55 @@ def retrieve_controller_version(version_file):
         raise AvxError("Version file is empty")
     print("Parsing version")
     try:
-        version = ".".join(((buf[12:]).split("."))[:-1])
+        ctrl_version = ".".join(((buf[12:]).split("."))[:-1])
     except (KeyboardInterrupt, IndexError, ValueError) as err:
         raise AvxError("Could not decode version") from err
     else:
-        print("Parsed version sucessfully " + str(version))
-        return version
+        print("Parsed version sucessfully " + str(ctrl_version))
+        return ctrl_version
 
 
-def run_initial_setup(ip_addr, cid, version):
-    """ Boots the fresh controller to the specific version"""
+def get_initial_setup_status(ip_addr, cid):
+    """ Get status of the initial setup completion execution"""
+    print("Checking initial setup")
     base_url = "https://" + ip_addr + "/v1/api"
     post_data = {"CID": cid,
                  "action": "initial_setup",
                  "subaction": "check"}
-    print("Checking initial setup")
-    response = requests.post(base_url, data=post_data, verify=False)
-    response_json = response.json()
+    try:
+        response = requests.post(base_url, data=post_data, verify=False)
+    except requests.exceptions.ConnectionError as err:
+        print(str(err))
+        return {'return': False, 'reason': str(err)}
+    return response.json()
+
+
+def run_initial_setup(ip_addr, cid, ctrl_version):
+    """ Boots the fresh controller to the specific version"""
+    response_json = get_initial_setup_status(ip_addr, cid)
     if response_json.get('return') is True:
         print("Initial setup is already done. Skipping")
-        return
+        return True
     post_data = {"CID": cid,
-                 "target_version": version,
+                 "target_version": ctrl_version,
                  "action": "initial_setup",
                  "subaction": "run"}
     print("Trying to run initial setup %s\n" % str(post_data))
+    base_url = "https://" + ip_addr + "/v1/api"
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:
         if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing initial setup API."
                   " Ignoring response")
-            response_json = {'return': True}
-            time.sleep(WAIT_DELAY)
+            response_json = {'return': True, 'reason': 'Warning!! Server closed the connection'}
+            time.sleep(INITIAL_SETUP_DELAY)
         else:
             raise AvxError("Failed to execute initial setup: " + str(err)) from err
     else:
         response_json = response.json()
+        # Controllers running 6.4 and above would be unresponsive after initial_setup
+        time.sleep(INITIAL_SETUP_DELAY)
     print(response_json)
 
     if response_json.get('return') is True:
@@ -512,6 +524,7 @@ def run_initial_setup(ip_addr, cid, version):
     else:
         raise AvxError("Could not bring up the new controller to the "
                        "specific version")
+    return False
 
 
 def temp_add_security_group_access(client, controller_instanceobj, api_private_access):
@@ -607,8 +620,8 @@ def create_cloud_account(cid, controller_ip, account_name):
         if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing create account API."
                   " Ignoring response")
-            output = {"return": True}
-            time.sleep(WAIT_DELAY)
+            output = {"return": True, 'reason': 'Warning!! Server closed the connection'}
+            time.sleep(INITIAL_SETUP_DELAY)
         else:
             output = {"return": False, "reason": str(err)}
     else:
@@ -634,8 +647,7 @@ def restore_backup(cid, controller_ip, s3_file, account_name):
         if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing restore_cloudx_config API."
                   " Ignoring response")
-            response_json = {"return": True}
-            time.sleep(WAIT_DELAY)
+            response_json = {"return": True, 'reason': 'Warning!! Server closed the connection'}
         else:
             print(str(err))
             response_json = {"return": False, "reason": str(err)}
@@ -658,7 +670,7 @@ def set_customer_id(cid, controller_api_ip):
         if "Remote end closed connection without response" in str(err):
             print("Server closed the connection while executing setup_customer_id API."
                   " Ignoring response")
-            response_json = {"return": True}
+            response_json = {"return": True, 'reason': 'Warning!! Server closed the connection'}
             time.sleep(WAIT_DELAY)
         else:
             response_json = {"return": False, "reason": str(err)}
@@ -725,33 +737,52 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
         priv_ip = os.environ.get('PRIV_IP')  # This private IP belongs to older terminated instance
 
         version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
-        version = retrieve_controller_version(version_file)
+        ctrl_version = retrieve_controller_version(version_file)
 
-        run_initial_setup(controller_api_ip, cid, version)
+        initial_setup_complete = run_initial_setup(controller_api_ip, cid, ctrl_version)
 
-        # Need to login again as initial setup invalidates cid after waiting
-        cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
         s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
         temp_acc_name = "tempacc"
 
         total_time = 0
-        sleep = True
+        sleep = False
         created_temp_acc = False
+        login_complete = False
+        response_json = {}
         while total_time <= INITIAL_SETUP_WAIT:
             if sleep:
                 print("Waiting for safe initial setup completion, maximum of " +
                       str(INITIAL_SETUP_WAIT - total_time) + " seconds remaining")
                 time.sleep(WAIT_DELAY)
             else:
+                print(f"{INITIAL_SETUP_WAIT - total_time} seconds remaining")
                 sleep = True
-            if not created_temp_acc:
+            if not login_complete:
+                # Need to login again as initial setup invalidates cid after waiting
+                print("Logging in again")
+                try:
+                    cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
+                except AvxError:  # It might not succeed since apache2 could restart
+                    print("Cannot connect to the controller")
+                    sleep = False
+                    time.sleep(INITIAL_SETUP_DELAY)
+                    total_time += INITIAL_SETUP_DELAY
+                    continue
+                else:
+                    login_complete = True
+            if not initial_setup_complete:
+                response_json = get_initial_setup_status(controller_api_ip, cid)
+                print("Initial setup status %s" % response_json)
+                if response_json.get('return', False) is True:
+                    initial_setup_complete = True
+            if initial_setup_complete and not created_temp_acc:
                 response_json = create_cloud_account(cid, controller_api_ip, temp_acc_name)
                 print(response_json)
                 if response_json.get('return', False) is True:
                     created_temp_acc = True
                 elif "already exists" in response_json.get('reason', ''):
                     created_temp_acc = True
-            if created_temp_acc:
+            if created_temp_acc and initial_setup_complete:
                 if os.environ.get("CUSTOMER_ID"):  # Support for license migration scenario
                     set_customer_id(cid, controller_api_ip)
                 response_json = restore_backup(cid, controller_api_ip, s3_file, temp_acc_name)
@@ -770,13 +801,30 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             elif response_json.get('reason', '') == 'valid action required':
                 print("API is not ready yet")
                 total_time += WAIT_DELAY
-            elif response_json.get('reason', '') == 'CID is invalid or expired.':
+            elif response_json.get('reason', '') == 'CID is invalid or expired.' or \
+                    "Invalid session. Please login again." in response_json.get('reason', '') or\
+                    f"Session {cid} not found" in response_json.get('reason', '') or \
+                    f"Session {cid} expired" in response_json.get('reason', ''):
                 print("Service abrupty restarted")
                 sleep = False
                 try:
                     cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
                 except AvxError:
                     pass
+            elif response_json.get('reason', '') == 'not run':
+                print('Initial setup not complete..waiting')
+                time.sleep(INITIAL_SETUP_DELAY)
+                total_time += INITIAL_SETUP_DELAY
+                sleep = False
+            elif 'Remote end closed connection without response' in response_json.get('reason', ''):
+                print('Remote side closed the connection..waiting')
+                time.sleep(INITIAL_SETUP_DELAY)
+                total_time += INITIAL_SETUP_DELAY
+                sleep = False
+            elif "Failed to establish a new connection" in response_json.get('reason', '')\
+                    or "Max retries exceeded with url" in response_json.get('reason', ''):
+                print('Failed to connect to the controller')
+                total_time += WAIT_DELAY
             else:
                 print("Restoring backup failed due to " +
                       str(response_json.get('reason', '')))
