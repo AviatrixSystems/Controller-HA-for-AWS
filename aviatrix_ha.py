@@ -518,12 +518,12 @@ def run_initial_setup(ip_addr, cid, ctrl_version):
         response_json = response.json()
         # Controllers running 6.4 and above would be unresponsive after initial_setup
     print(response_json)
+    time.sleep(INITIAL_SETUP_API_WAIT)
     if response_json.get('return') is True:
         print("Successfully initialized the controller")
     else:
         raise AvxError("Could not bring up the new controller to the "
                        "specific version")
-    time.sleep(INITIAL_SETUP_API_WAIT)
     return False
 
 
