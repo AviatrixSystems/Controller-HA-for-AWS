@@ -24,6 +24,8 @@ WAIT_DELAY = 30
 
 INITIAL_SETUP_WAIT = 180
 INITIAL_SETUP_DELAY = 10
+
+INITIAL_SETUP_API_WAIT = 20
 AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json'
 
 
@@ -510,15 +512,13 @@ def run_initial_setup(ip_addr, cid, ctrl_version):
             print("Server closed the connection while executing initial setup API."
                   " Ignoring response")
             response_json = {'return': True, 'reason': 'Warning!! Server closed the connection'}
-            time.sleep(INITIAL_SETUP_DELAY)
         else:
             raise AvxError("Failed to execute initial setup: " + str(err)) from err
     else:
         response_json = response.json()
         # Controllers running 6.4 and above would be unresponsive after initial_setup
-        time.sleep(INITIAL_SETUP_DELAY)
     print(response_json)
-
+    time.sleep(INITIAL_SETUP_API_WAIT)
     if response_json.get('return') is True:
         print("Successfully initialized the controller")
     else:
