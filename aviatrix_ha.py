@@ -920,12 +920,19 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     try:
         tags = json.loads(os.environ.get('TAGS'))
     except ValueError:
-        tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+        tags_stripped = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
     else:
         if not tags:
             tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+        tags_stripped = []
         for tag in tags:
+            key = tag.get('Key', '')
+            # Tags starting with aws: is reserved
             tag['PropagateAtLaunch'] = True
+            if not key.startswith("aws: "):
+                tags_stripped.append(tag)
+
+
     disks = json.loads(os.environ.get('DISKS'))
     if disks:
         for disk in disks:
@@ -987,7 +994,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                 MaxSize=1,
                 DesiredCapacity=0 if attach_instance else 1,
                 VPCZoneIdentifier=val_subnets,
-                Tags=tags
+                Tags=tags_stripped
             )
         except botocore.exceptions.ClientError as err:
             if "AlreadyExists" in str(err):

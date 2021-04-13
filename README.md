@@ -55,3 +55,35 @@ This script is only supported for Aviatrix Controller version >= 3.4
 13. If you see any issues, report them in this github
 
 14. Enjoy! You are welcome!
+
+
+### FAQ
+1. How do I disable controller H/A?
+   
+  -  You can disable controller H/A by deleting the CFT stack that was used to enable H/A
+   
+2. How can I know which version of HA script I am running?
+   
+   - versions.py found in the AWS Lambda with the name <controller_name>-ha. You can also see the version in the cloudwatch logs. Only versions from 1.5 and above are present
+   
+3. How can I get notification for H/A events?
+   
+   Enter an email while  notifications for autoscaling group events. You would receive an email to subscribe to SNS. Click on the link from the email to accept SNS events   
+
+4. My H/A event failed. What can I do?
+   
+   - You can manually restore the saved backup to a newly launched controller. Please ensure controller H/A is disabled and re-enabled by deleting and re-creating the CFT stack to ensure that lambda is pointing to the right backup
+ 
+5. How do I ensure that lambda is pointing to the right backup?
+   
+   - In the AWS Lambda, verify INST_ID environment variable is updated correctly to the current controller. 
+   
+6. Where do I find logs related to controller H/A ?
+   
+   - All logs related to H/A can be found in AWS Cloudwatch under the log group <controller_name>-ha
+   
+7. How do I make lambda talks to controller privately within the VPC?
+    
+   - Launch CFT like you normally would. Attach lambda to the VPC form the AWS console. Ensure that the VPC that you have attached has internet access via NAT gateway or VPC endpoints. You can also ensure lambda has internet access by attaching an EIP(Elastic IP) to the lambda ENI(Network Interface). After ensuring that lambda has internet access you can modify the API_PRIVATE_ACCESS environment variable to True. Please ensure that everything is reverted before you destroy the stack. Otherwise the lambda will not have internet access to respond to CFT
+
+    
