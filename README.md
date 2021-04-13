@@ -60,7 +60,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
 ### FAQ
 1. How do I disable controller H/A?
    
-  -  You can disable controller H/A by deleting the CFT stack that was used to enable H/A
+   -  You can disable controller H/A by deleting the CFT stack that was used to enable H/A
    
 2. How can I know which version of HA script I am running?
    
