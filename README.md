@@ -68,7 +68,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
    
 3. How can I get notification for H/A events?
    
-   Enter an email while  notifications for autoscaling group events. You would receive an email to subscribe to SNS. Click on the link from the email to accept SNS events   
+   - Enter an email while  notifications for autoscaling group events. You would receive an email to subscribe to SNS. Click on the link from the email to accept SNS event notifications   
 
 4. My H/A event failed. What can I do?
    
