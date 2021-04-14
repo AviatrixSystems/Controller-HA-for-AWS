@@ -349,6 +349,13 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
     mon_bool = controller_instanceobj.get('Monitoring', {}).get('State', 'disabled') != 'disabled'
     monitoring = 'enabled' if mon_bool else 'disabled'
     tags = controller_instanceobj.get("Tags", [])
+    tags_stripped = []
+    for tag in tags:
+        key = tag.get("Key", "")
+        # Tags starting with aws: is reserved
+        if not key.startswith("aws:"):
+            tags_stripped.append(tag)
+
     disks = []
     for volume in controller_instanceobj.get('BlockDeviceMappings', {}):
         ebs = volume.get('Ebs', {})
@@ -381,7 +388,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'IAM_ARN': iam_arn,
         'MONITORING': monitoring,
         'DISKS': json.dumps(disks),
-        'TAGS': json.dumps(tags),
+        'TAGS': json.dumps(tags_stripped),
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
@@ -920,18 +927,12 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     try:
         tags = json.loads(os.environ.get('TAGS'))
     except ValueError:
-        tags_stripped = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+        tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
     else:
         if not tags:
             tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
-        tags_stripped = []
         for tag in tags:
-            key = tag.get('Key', '')
-            # Tags starting with aws: is reserved
             tag['PropagateAtLaunch'] = True
-            if not key.startswith("aws: "):
-                tags_stripped.append(tag)
-
 
     disks = json.loads(os.environ.get('DISKS'))
     if disks:
@@ -994,7 +995,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                 MaxSize=1,
                 DesiredCapacity=0 if attach_instance else 1,
                 VPCZoneIdentifier=val_subnets,
-                Tags=tags_stripped
+                Tags=tags
             )
         except botocore.exceptions.ClientError as err:
             if "AlreadyExists" in str(err):
