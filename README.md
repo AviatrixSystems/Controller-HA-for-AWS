@@ -76,7 +76,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
  
 5. How do I ensure that lambda is pointing to the right backup?
    
-   -  In the AWS Lambda, verify if the INST_ID environment variable is updated correctly to the current controller instance ID. 
+   -  In the AWS Lambda, verify if the INST_ID environment variable is updated correctly to the current controller instance ID and the PRIV_IP environment variable is updated to the current controller private IP.
    
 6. Where do I find logs related to controller H/A ?
    
