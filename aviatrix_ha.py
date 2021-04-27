@@ -437,19 +437,18 @@ def verify_bucket(controller_instanceobj):
 def is_backup_file_is_recent(backup_file):
     """ Check if backup file is not older than MAXIMUM_BACKUP_AGE """
     try:
-        s3 = boto3.client('s3')
+        s3c = boto3.client('s3')
         try:
-            a = s3.get_object(Key=backup_file, Bucket=os.environ.get('S3_BUCKET_BACK'))
+            file_obj = s3c.get_object(Key=backup_file, Bucket=os.environ.get('S3_BUCKET_BACK'))
         except botocore.exceptions.ClientError as err:
             print(str(err))
             return False
-        else:
-            age = time.time() - a['LastModified'].timestamp()
-            if age < MAXIMUM_BACKUP_AGE:
-                print("Succesfully validated Backup file age")
-                return True
-            print(f"File age {age} is older than the maximum allowed value of {MAXIMUM_BACKUP_AGE}")
-            return False
+        age = time.time() - file_obj['LastModified'].timestamp()
+        if age < MAXIMUM_BACKUP_AGE:
+            print("Succesfully validated Backup file age")
+            return True
+        print(f"File age {age} is older than the maximum allowed value of {MAXIMUM_BACKUP_AGE}")
+        return False
     except Exception as err:
         print(f"Checking backup file age failed due to {str(err)}")
         return False
