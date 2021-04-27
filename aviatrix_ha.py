@@ -27,6 +27,7 @@ INITIAL_SETUP_DELAY = 10
 
 INITIAL_SETUP_API_WAIT = 20
 AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json'
+MAXIMUM_BACKUP_AGE = 24 * 3600 * 3   # 3 days
 
 
 class AvxError(Exception):
@@ -186,8 +187,11 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
                              ' controller'
         if not verify_bucket(controller_instanceobj):
             return 'FAILED', 'Unable to verify S3 bucket'
-        if not verify_backup_file(controller_instanceobj):
+        backup_file_status, backup_file = verify_backup_file(controller_instanceobj)
+        if not backup_file_status:
             return 'FAILED', 'Cannot find backup file in the bucket'
+        if not is_backup_file_is_recent(backup_file):
+            return 'FAILED', f'Backup file is older than {MAXIMUM_BACKUP_AGE}'
         if not assign_eip(client, controller_instanceobj, None):
             return 'FAILED', 'Failed to associate EIP or EIP was not found.' \
                              ' Please attach an EIP to the controller before enabling HA'
@@ -430,6 +434,27 @@ def verify_bucket(controller_instanceobj):
     return True
 
 
+def is_backup_file_is_recent(backup_file):
+    """ Check if backup file is not older than MAXIMUM_BACKUP_AGE """
+    try:
+        s3 = boto3.client('s3')
+        try:
+            a = s3.get_object(Key=backup_file, Bucket=os.environ.get('S3_BUCKET_BACK'))
+        except botocore.exceptions.ClientError as err:
+            print(str(err))
+            return False
+        else:
+            age = time.time() - a['LastModified'].timestamp()
+            if age < MAXIMUM_BACKUP_AGE:
+                print("Succesfully validated Backup file age")
+                return True
+            print(f"File age {age} is older than the maximum allowed value of {MAXIMUM_BACKUP_AGE}")
+            return False
+    except Exception as err:
+        print(f"Checking backup file age failed due to {str(err)}")
+        return False
+
+
 def verify_backup_file(controller_instanceobj):
     """ Verify if s3 file exists"""
     print("Verifying Backup file")
@@ -445,14 +470,14 @@ def verify_backup_file(controller_instanceobj):
         except botocore.exceptions.ClientError as err:
             if err.response['Error']['Code'] == "404":
                 print("The object %s does not exist." % s3_file)
-                return False
+                return False, ""
             print(str(err))
-            return False
+            return False, ""
     except Exception as err:
         print("Verify Backup failed %s" % str(err))
-        return False
+        return False, ""
     else:
-        return True
+        return True, s3_file
 
 
 def retrieve_controller_version(version_file):
@@ -722,6 +747,14 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     print("0.0.0.0:443/0 rule is %s present %s" %
           ("already" if duplicate else "not",
            "" if duplicate else ". Modified Security group %s" % sg_modified))
+
+    priv_ip = os.environ.get('PRIV_IP')  # This private IP belongs to older terminated instance
+    s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
+
+    if not is_backup_file_is_recent(s3_file):
+        raise AvxError(f"HA event failed. Backup file does not exist or is older"
+                       f" than {MAXIMUM_BACKUP_AGE}")
+
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {'TMP_SG_GRP': sg_modified})
@@ -741,14 +774,12 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             handle_login_failure(controller_api_ip, client, lambda_client, controller_instanceobj,
                                  context, eip)
             return
-        priv_ip = os.environ.get('PRIV_IP')  # This private IP belongs to older terminated instance
 
         version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
         ctrl_version = retrieve_controller_version(version_file)
 
         initial_setup_complete = run_initial_setup(controller_api_ip, cid, ctrl_version)
 
-        s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
         temp_acc_name = "tempacc"
 
         total_time = 0
