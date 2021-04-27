@@ -201,7 +201,7 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
             ami_id = controller_instanceobj['ImageId']
             inst_id = controller_instanceobj['InstanceId']
             inst_type = controller_instanceobj['InstanceType']
-            key_name = controller_instanceobj['KeyName']
+            key_name = controller_instanceobj.get('KeyName', '')
             sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
             setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
         except Exception as err:
@@ -342,7 +342,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
     ami_id = controller_instanceobj['ImageId']
     vpc_id = controller_instanceobj['VpcId']
     inst_type = controller_instanceobj['InstanceType']
-    keyname = controller_instanceobj['KeyName']
+    keyname = controller_instanceobj.get('KeyName', '')
     ctrl_subnet = controller_instanceobj['SubnetId']
     priv_ip = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
     iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
@@ -922,7 +922,8 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     sub_list = os.environ.get('SUBNETLIST')
     val_subnets = validate_subnets(sub_list.split(","))
     print("Valid subnets %s" % val_subnets)
-    validate_keypair(key_name)
+    if key_name:
+        validate_keypair(key_name)
     bld_map = []
     try:
         tags = json.loads(os.environ.get('TAGS'))
@@ -978,7 +979,8 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             "UserData": "# Ignore",
             "IamInstanceProfile": iam_arn,
         }
-
+        if not key_name:
+            del kw_args["KeyName"]
         if not iam_arn:
             del kw_args["IamInstanceProfile"]
         if not bld_map:
