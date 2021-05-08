@@ -1,2 +1,2 @@
 """ Version information"""
-VERSION = "1.7"
+VERSION = "1.8"

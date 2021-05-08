@@ -175,6 +175,7 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
     if event['RequestType'] == 'Create':
         try:
             os.environ['TOPIC_ARN'] = 'N/A'
+            os.environ['S3_BUCKET_REGION'] = ""
             set_environ(client, lambda_client, controller_instanceobj, context)
             print("Environment variables have been set.")
         except Exception as err:
@@ -185,7 +186,10 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
         if not verify_iam(controller_instanceobj):
             return 'FAILED', 'IAM role aviatrix-role-ec2 could not be verified to be attached to' \
                              ' controller'
-        if not verify_bucket(controller_instanceobj):
+        bucket_status, bucket_region = verify_bucket(controller_instanceobj)
+        os.environ['S3_BUCKET_REGION'] = bucket_region
+        update_env_dict(lambda_client, context, {"S3_BUCKET_REGION": bucket_region})
+        if not bucket_status:
             return 'FAILED', 'Unable to verify S3 bucket'
         backup_file_status, backup_file = verify_backup_file(controller_instanceobj)
         if not backup_file_status:
@@ -292,6 +296,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'INST_ID': os.environ.get('INST_ID'),
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
         'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
+        'S3_BUCKET_REGION': os.environ.get('S3_BUCKET_REGION', ''),
         'TOPIC_ARN': os.environ.get('TOPIC_ARN'),
         'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
         'IAM_ARN': os.environ.get('IAM_ARN'),
@@ -387,6 +392,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'INST_ID': inst_id,
         'SUBNETLIST': os.environ.get('SUBNETLIST'),
         'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
+        'S3_BUCKET_REGION': os.environ.get('S3_BUCKET_REGION', ''),
         'TOPIC_ARN': sns_topic_arn,
         'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
         'IAM_ARN': iam_arn,
@@ -418,12 +424,17 @@ def verify_bucket(controller_instanceobj):
     print("Verifying bucket")
     try:
         s3_client = boto3.client('s3')
-        s3_client.get_bucket_location(Bucket=os.environ.get('S3_BUCKET_BACK'))
-
+        resp = s3_client.get_bucket_location(Bucket=os.environ.get('S3_BUCKET_BACK'))
     except Exception as err:
         print("S3 bucket used for backup is not "
               "valid. %s" % str(err))
-        return False
+        return False, ""
+    try:
+        bucket_region = resp['LocationConstraint']
+    except KeyError:
+        print("Key LocationConstraint not found in get_bucket_location response %s" % resp)
+        return False, ""
+
     print("S3 bucket is valid.")
     eip = controller_instanceobj[
         'NetworkInterfaces'][0]['Association'].get('PublicIp')
@@ -431,13 +442,13 @@ def verify_bucket(controller_instanceobj):
 
     # login_to_controller(eip, os.environ.get('AVIATRIX_USER_BACK'),
     #                     os.environ.get('AVIATRIX_PASS_BACK'))
-    return True
+    return True, bucket_region
 
 
 def is_backup_file_is_recent(backup_file):
     """ Check if backup file is not older than MAXIMUM_BACKUP_AGE """
     try:
-        s3c = boto3.client('s3')
+        s3c = boto3.client('s3', region_name=os.environ['S3_BUCKET_REGION'])
         try:
             file_obj = s3c.get_object(Key=backup_file, Bucket=os.environ.get('S3_BUCKET_BACK'))
         except botocore.exceptions.ClientError as err:
@@ -458,7 +469,7 @@ def verify_backup_file(controller_instanceobj):
     """ Verify if s3 file exists"""
     print("Verifying Backup file")
     try:
-        s3c = boto3.client('s3')
+        s3c = boto3.client('s3', region_name=os.environ['S3_BUCKET_REGION'])
         priv_ip = controller_instanceobj['NetworkInterfaces'][0]['PrivateIpAddress']
         version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
         retrieve_controller_version(version_file)
@@ -482,7 +493,7 @@ def verify_backup_file(controller_instanceobj):
 def retrieve_controller_version(version_file):
     """ Get the controller version from backup file"""
     print("Retrieving version from file " + str(version_file))
-    s3c = boto3.client('s3')
+    s3c = boto3.client('s3', region_name=os.environ['S3_BUCKET_REGION'])
     try:
         with open('/tmp/version_ctrlha.txt', 'wb') as data:
             s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), version_file,
