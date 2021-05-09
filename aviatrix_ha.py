@@ -1125,7 +1125,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
         print("Deleting SNS topic")
         sns_client = boto3.client('sns')
         topic_arn = os.environ.get('TOPIC_ARN')
-        if topic_arn == "N/A":
+        if topic_arn == "N/A" or not topic_arn:
             print("Topic not created. Exiting")
             return
         try:
