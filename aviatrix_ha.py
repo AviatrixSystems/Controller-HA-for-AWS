@@ -28,7 +28,7 @@ INITIAL_SETUP_DELAY = 10
 INITIAL_SETUP_API_WAIT = 20
 AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json'
 MAXIMUM_BACKUP_AGE = 24 * 3600 * 3   # 3 days
-
+AWS_US_EAST_REGION = 'us-east-1'
 
 class AvxError(Exception):
     """ Error class for Aviatrix exceptions"""
@@ -431,6 +431,10 @@ def verify_bucket(controller_instanceobj):
         return False, ""
     try:
         bucket_region = resp['LocationConstraint']
+
+        # Buckets in Region us-east-1 have a LocationConstraint of null
+        if bucket_region is None:
+            bucket_region = AWS_US_EAST_REGION
     except KeyError:
         print("Key LocationConstraint not found in get_bucket_location response %s" % resp)
         return False, ""
