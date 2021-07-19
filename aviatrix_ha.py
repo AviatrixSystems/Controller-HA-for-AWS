@@ -305,6 +305,8 @@ def update_env_dict(lambda_client, context, replace_dict):
         'DISKS': os.environ.get('DISKS'),
         'TAGS': os.environ.get('TAGS', '[]'),
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
+        'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
+        'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -401,6 +403,8 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'DISKS': json.dumps(disks),
         'TAGS': json.dumps(tags_stripped),
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
+        'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
+        'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
         }
@@ -657,8 +661,8 @@ def create_cloud_account(cid, controller_ip, account_name):
                  "action": "setup_account_profile",
                  "account_name": account_name,
                  "aws_account_number": aws_acc_num,
-                 "aws_role_arn": "arn:aws:iam::%s:role/aviatrix-role-app" % aws_acc_num,
-                 "aws_role_ec2": "arn:aws:iam::%s:role/aviatrix-role-ec2" % aws_acc_num,
+                 "aws_role_arn": "arn:aws:iam::%s:role/%s" % (aws_acc_num,os.environ.get('AWS_ROLE_APP_NAME')),
+                 "aws_role_ec2": "arn:aws:iam::%s:role/%s" % (aws_acc_num,os.environ.get('AWS_ROLE_EC2_NAME')),
                  "cloud_type": 1,
                  "aws_iam": "true"}
     print("Trying to create account with data %s\n" % str(post_data))
