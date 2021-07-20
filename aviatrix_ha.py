@@ -651,6 +651,13 @@ def enable_t2_unlimited(client, inst_id):
         print(str(err))
 
 
+def get_role(role, default):
+    name = os.environ.get(role)
+    if len(name) == 0 :
+        return default
+    else:
+        return name
+
 def create_cloud_account(cid, controller_ip, account_name):
     """ Create a temporary account to restore the backup"""
     print("Creating temporary account")
@@ -661,8 +668,8 @@ def create_cloud_account(cid, controller_ip, account_name):
                  "action": "setup_account_profile",
                  "account_name": account_name,
                  "aws_account_number": aws_acc_num,
-                 "aws_role_arn": "arn:aws:iam::%s:role/%s" % (aws_acc_num,os.environ.get('AWS_ROLE_APP_NAME')),
-                 "aws_role_ec2": "arn:aws:iam::%s:role/%s" % (aws_acc_num,os.environ.get('AWS_ROLE_EC2_NAME')),
+                 "aws_role_arn": "arn:aws:iam::%s:role/%s" % (aws_acc_num, get_role("AWS_ROLE_APP_NAME", "aviatrix-role-app")),
+                 "aws_role_ec2": "arn:aws:iam::%s:role/%s" % (aws_acc_num, get_role("AWS_ROLE_EC2_NAME", "aviatrix-role-ec2")),
                  "cloud_type": 1,
                  "aws_iam": "true"}
     print("Trying to create account with data %s\n" % str(post_data))
