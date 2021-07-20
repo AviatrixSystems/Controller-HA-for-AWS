@@ -17,6 +17,7 @@ import requests
 import boto3
 import botocore
 import version
+
 urllib3.disable_warnings(InsecureRequestWarning)
 
 MAX_LOGIN_TIMEOUT = 800
@@ -27,8 +28,10 @@ INITIAL_SETUP_DELAY = 10
 
 INITIAL_SETUP_API_WAIT = 20
 AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json'
-MAXIMUM_BACKUP_AGE = 24 * 3600 * 3   # 3 days
+MAXIMUM_BACKUP_AGE = 24 * 3600 * 3  # 3 days
 AWS_US_EAST_REGION = 'us-east-1'
+
+mask = lambda input: input[0:5] + '*' * 15 if isinstance(input, str) else ''
 
 
 class AvxError(Exception):
@@ -44,7 +47,7 @@ def lambda_handler(event, context):
         _lambda_handler(event, context)
     except AvxError as err:
         print('Operation failed due to: ' + str(err))
-    except Exception as err:    # pylint: disable=broad-except
+    except Exception as err:  # pylint: disable=broad-except
         print(str(traceback.format_exc()))
         print("Lambda function failed due to " + str(err))
 
@@ -132,7 +135,7 @@ def _lambda_handler(event, context):
             err_reason = str(err)
             print(err_reason)
             response_status = 'FAILED'
-        except Exception as err:       # pylint: disable=broad-except
+        except Exception as err:  # pylint: disable=broad-except
             err_reason = str(err)
             print(traceback.format_exc())
             response_status = 'FAILED'
@@ -333,7 +336,7 @@ def login_to_controller(ip_addr, username, pwd):
     print(response_json)
     try:
         cid = response_json['CID']
-        print("Created new session with CID {}\n".format(cid))
+        print("Created new session with CID {}\n".format(mask(cid)))
     except KeyError as err:
         print("Unable to create session. {}".format(err))
         raise AvxError("Unable to create session. {}".format(err)) from err
@@ -407,7 +410,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
-        }
+    }
     print("Setting environment %s" % env_dict)
 
     lambda_client.update_function_configuration(FunctionName=context.function_name,
@@ -551,11 +554,11 @@ def run_initial_setup(ip_addr, cid, ctrl_version):
     if response_json.get('return') is True:
         print("Initial setup is already done. Skipping")
         return True
-    post_data = {"CID": cid,
-                 "target_version": ctrl_version,
+    post_data = {"target_version": ctrl_version,
                  "action": "initial_setup",
                  "subaction": "run"}
     print("Trying to run initial setup %s\n" % str(post_data))
+    post_data["CID"] = cid
     base_url = "https://" + ip_addr + "/v1/api"
     try:
         response = requests.post(base_url, data=post_data, verify=False)
@@ -594,7 +597,7 @@ def temp_add_security_group_access(client, controller_instanceobj, api_private_a
                             'FromPort': 443,
                             'ToPort': 443,
                             'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
-                          ])
+                           ])
     except botocore.exceptions.ClientError as err:
         if "InvalidPermission.Duplicate" in str(err):
             return True, sgs[0]
@@ -663,8 +666,7 @@ def create_cloud_account(cid, controller_ip, account_name):
     client = boto3.client('sts')
     aws_acc_num = client.get_caller_identity()["Account"]
     base_url = "https://%s/v1/api" % controller_ip
-    post_data = {"CID": cid,
-                 "action": "setup_account_profile",
+    post_data = {"action": "setup_account_profile",
                  "account_name": account_name,
                  "aws_account_number": aws_acc_num,
                  "aws_role_arn": "arn:aws:iam::%s:role/%s" % (aws_acc_num, get_role("AWS_ROLE_APP_NAME", "aviatrix-role-app")),
@@ -672,6 +674,7 @@ def create_cloud_account(cid, controller_ip, account_name):
                  "cloud_type": 1,
                  "aws_iam": "true"}
     print("Trying to create account with data %s\n" % str(post_data))
+    post_data["CID"] = cid
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:
@@ -691,13 +694,13 @@ def create_cloud_account(cid, controller_ip, account_name):
 def restore_backup(cid, controller_ip, s3_file, account_name):
     """ Restore backup from the s3 bucket"""
     restore_data = {
-        "CID": cid,
         "action": "restore_cloudx_config",
         "cloud_type": "1",
         "account_name": account_name,
         "file_name": s3_file,
         "bucket_name": os.environ.get('S3_BUCKET_BACK')}
     print("Trying to restore config with data %s\n" % str(restore_data))
+    restore_data["CID"] = cid
     base_url = "https://" + controller_ip + "/v1/api"
     try:
         response = requests.post(base_url, data=restore_data, verify=False)
@@ -866,7 +869,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 print("API is not ready yet")
                 total_time += WAIT_DELAY
             elif response_json.get('reason', '') == 'CID is invalid or expired.' or \
-                    "Invalid session. Please login again." in response_json.get('reason', '') or\
+                    "Invalid session. Please login again." in response_json.get('reason', '') or \
                     f"Session {cid} not found" in response_json.get('reason', '') or \
                     f"Session {cid} expired" in response_json.get('reason', ''):
                 print("Service abrupty restarted")
@@ -885,7 +888,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 time.sleep(INITIAL_SETUP_DELAY)
                 total_time += INITIAL_SETUP_DELAY
                 sleep = False
-            elif "Failed to establish a new connection" in response_json.get('reason', '')\
+            elif "Failed to establish a new connection" in response_json.get('reason', '') \
                     or "Max retries exceeded with url" in response_json.get('reason', ''):
                 print('Failed to connect to the controller')
                 total_time += WAIT_DELAY
@@ -1079,7 +1082,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     update_env_dict(lambda_client, context, {'TOPIC_ARN': sns_topic_arn})
     lambda_fn_arn = lambda_client.get_function(
         FunctionName=context.function_name).get('Configuration').get(
-            'FunctionArn')
+        'FunctionArn')
     sns_client.subscribe(TopicArn=sns_topic_arn,
                          Protocol='lambda',
                          Endpoint=lambda_fn_arn).get('SubscriptionArn')
