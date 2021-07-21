@@ -655,8 +655,7 @@ def get_role(role, default):
     name = os.environ.get(role)
     if len(name) == 0 :
         return default
-    else:
-        return name
+    return name
 
 def create_cloud_account(cid, controller_ip, account_name):
     """ Create a temporary account to restore the backup"""

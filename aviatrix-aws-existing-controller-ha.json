@@ -13,7 +13,7 @@
         },
         {
           "Label" : { "default":"Aviatrix Controller Backup Configuration" },
-          "Parameters" : [ "AviatrixTagParam", "AviatrixAppRoleName", "AviatrixEC2RoleName", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "NotifEmailParam" ]
+          "Parameters" : [ "AviatrixTagParam", "CustomAviatrixAppRoleName", "CustomAviatrixEC2RoleName", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "NotifEmailParam" ]
         }
       ],
       "ParameterLabels" :
@@ -24,8 +24,8 @@
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "NotifEmailParam": { "default" : "Enter an email to receive notifications for autoscaling group events" },
          "PrivateAccess": { "default" : "Enter True to enable Private IP Access from lambda to the Controller. Please note that you have to attach the Lambda to the VPC subnet and ensure lambda has internet access via EIP/NAT" },
-         "AviatrixAppRoleName": {"default" : "Enter the controller IAM APP role name."},
-         "AviatrixEC2RoleName": {"default" : "Enter the controller IAM EC2 role name."}
+         "CustomAviatrixAppRoleName": {"default" : "Enter the controller IAM APP role name."},
+         "CustomAviatrixEC2RoleName": {"default" : "Enter the controller IAM EC2 role name."}
       }
     }
   },
@@ -47,13 +47,13 @@
         "Description": "Enter the existing controller instance name. It should contain only letters, numbers, hyphens, or underscores. No spaces allowed"
       },
 
-      "AviatrixAppRoleName":
+      "CustomAviatrixAppRoleName":
       {
         "Type": "String",
         "Description": "Enter the controller IAM APP role name if it is different than the default 'aviatrix-role-app'.",
         "Default": "aviatrix-role-app"
       },
-      "AviatrixEC2RoleName":
+      "CustomAviatrixEC2RoleName":
       {
         "Type": "String",
         "Description": "Enter the controller IAM EC2 role name if it is different than the default 'aviatrix-role-ec2'.",
@@ -182,8 +182,8 @@
           "Environment" : {
             "Variables": {
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
-              "AWS_ROLE_APP_NAME" : { "Ref" : "AviatrixAppRoleName" },
-              "AWS_ROLE_EC2_NAME" : { "Ref" : "AviatrixEC2RoleName" },
+              "AWS_ROLE_APP_NAME" : { "Ref" : "CustomAviatrixAppRoleName" },
+              "AWS_ROLE_EC2_NAME" : { "Ref" : "CustomAviatrixEC2RoleName" },
               "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
               "S3_BUCKET_BACK" : { "Ref" : "S3BucketBackupParam" },
               "API_PRIVATE_ACCESS" : { "Ref" : "PrivateAccess" },
