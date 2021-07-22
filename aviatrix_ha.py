@@ -333,13 +333,14 @@ def login_to_controller(ip_addr, username, pwd):
                                                                       str(err)))
         raise AvxError(str(err)) from err
     response_json = response.json()
-    print(response_json)
     try:
-        cid = response_json['CID']
+        cid = response_json.pop('CID')
         print("Created new session with CID {}\n".format(mask(cid)))
     except KeyError as err:
+        print(response_json)
         print("Unable to create session. {}".format(err))
         raise AvxError("Unable to create session. {}".format(err)) from err
+    print(response_json)
     return cid
 
 
