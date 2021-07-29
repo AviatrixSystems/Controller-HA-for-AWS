@@ -85,7 +85,12 @@ This script is only supported for Aviatrix Controller version >= 3.4
 7. How do I make lambda talk to controller privately within the VPC?
     
    - Launch CFT with Private access set to True. Attach lambda to the VPC from the AWS console. Ensure that the VPC that you have attached the lambda to has internet access via NAT gateway or VPC endpoints. You can also ensure that lambda has internet access by attaching an EIP(Elastic IP) to the lambda ENI(Network Interface). Please ensure that everything is reverted before you destroy the stack. Otherwise the lambda will not have internet access to respond to the CFT(CFT may get stuck on destroy).
-    
+
+8. How do I manage the controller HA stack if the controller instance's disk is encrypted?
+   - If EBS Encryption using Customer managed key is enabled, the Autoscaling Group created may not have permissions to launch the instance.
+You will need to allow the service-linked role created for the Autoscaling group to have permissions to use this key for the cryptographic operation.
+To do so, go to AWS KMS->Customer managed keys->select the key and add the "AWSServiceRoleForAutoScaling" role to the list of Key Users.
+
 ### Changelog
 
 The changes between various releases can be viewed from [here](https://github.com/AviatrixSystems/Controller-HA-for-AWS/releases)
