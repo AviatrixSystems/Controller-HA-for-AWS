@@ -31,6 +31,8 @@ AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.jso
 MAXIMUM_BACKUP_AGE = 24 * 3600 * 3  # 3 days
 AWS_US_EAST_REGION = 'us-east-1'
 
+VERSION_PREFIX = "UserConnect-"
+
 mask = lambda input: input[0:5] + '*' * 15 if isinstance(input, str) else ''
 
 
@@ -504,6 +506,29 @@ def verify_backup_file(controller_instanceobj):
         return True, s3_file
 
 
+def is_upgrade_to_build_supported(ip_addr, cid):
+    """ Check if the version supports upgrade to build """
+    print("Checking if upgrade to build is suppported")
+    base_url = "https://" + ip_addr + "/v1/api"
+    post_data = {"CID": cid,
+                 "action": "get_feature_info"}
+    try:
+        response = requests.post(base_url, data=post_data, verify=False)
+        print(response.content)
+        response_json = json.loads(response.content)
+        if response_json.get("return") is True and \
+                response_json.get("results", {}) \
+                .get("allow_build_upgrade") is True:
+            print("Upgrade to build is supported")
+            return True
+    except requests.exceptions.ConnectionError as err:
+        print(str(err))
+    except (ValueError, TypeError):
+        print("json decode failed: {}".format(response.content))
+    print("Upgrade to build is not supported")
+    return False
+
+
 def retrieve_controller_version(version_file):
     """ Get the controller version from backup file"""
     print("Retrieving version from file " + str(version_file))
@@ -525,13 +550,17 @@ def retrieve_controller_version(version_file):
     if not buf:
         raise AvxError("Version file is empty")
     print("Parsing version")
+    if buf.startswith(VERSION_PREFIX):
+        buf = buf[len(VERSION_PREFIX):]
     try:
-        ctrl_version = ".".join(((buf[12:]).split("."))[:-1])
+        ver_list = buf.split(".")
+        ctrl_version = ".".join(ver_list[:-1])
+        ctrl_version_with_build = ".".join(ver_list)
     except (KeyboardInterrupt, IndexError, ValueError) as err:
         raise AvxError("Could not decode version") from err
-    else:
-        print("Parsed version sucessfully " + str(ctrl_version))
-        return ctrl_version
+    print("Parsed version sucessfully {} and {}".format(
+          ctrl_version, ctrl_version_with_build))
+    return ctrl_version, ctrl_version_with_build
 
 
 def get_initial_setup_status(ip_addr, cid):
@@ -806,7 +835,10 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             return
 
         version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
-        ctrl_version = retrieve_controller_version(version_file)
+        ctrl_version, ctrl_version_with_build = retrieve_controller_version(
+                version_file)
+        if is_upgrade_to_build_supported(controller_api_ip, cid):
+            ctrl_version = ctrl_version_with_build
 
         initial_setup_complete = run_initial_setup(controller_api_ip, cid, ctrl_version)
 
