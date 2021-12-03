@@ -11,8 +11,9 @@ import boto3
 from botocore.exceptions import ClientError
 
 try:
-    ACCESS_KEY = os.environ['ACCESS_KEY']
-    SECRET_KEY = os.environ['SECRET_KEY']
+    ACCESS_KEY = os.environ['AWS_ACCESS_KEY_ID']
+    SECRET_KEY = os.environ['AWS_SECRET_ACCESS_KEY']
+    SESSION_TOKEN = os.environ['AWS_SESSION_TOKEN']
 except KeyError as err:
     raise Exception("use as ACCESS_KEY=xxxx SECRET_KEY=yyyy python push_to_s3.py."
                     " For dev add --dev") from err
@@ -31,7 +32,7 @@ def push_cft_s3():
     """ Push CFT to S3"""
     print(" Pushing CFT")
     s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
-                       region_name=CFT_BUCKET_REGION)
+                       region_name=CFT_BUCKET_REGION, aws_session_token=SESSION_TOKEN)
     dst_file = CFT_FILE_NAME
     dev = False
     try:
@@ -68,7 +69,7 @@ def push_cft_s3():
 def push_lambda_file_s3():
     """ Push lambda file to each region"""
     ec2_ = boto3.client('ec2', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
-                        region_name='us-west-1')
+                        region_name='us-west-1', aws_session_token=SESSION_TOKEN)
     regions = [reg['RegionName'] for reg in ec2_.describe_regions()['Regions']]
 
     for region in regions:
@@ -80,7 +81,7 @@ def push_lambda_file_in_region(region):
     """ Push"""
     bucket_name = BUCKET_PREFIX + region
     s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
-                       region_name=region)
+                       region_name=region, aws_session_token=SESSION_TOKEN)
 
     # # Buckets are already created now
     # try:
