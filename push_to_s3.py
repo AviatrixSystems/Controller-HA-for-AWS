@@ -8,7 +8,10 @@ import traceback
 import threading
 import requests
 import boto3
+import zipfile
 from botocore.exceptions import ClientError
+
+from aviatrix_ha import DEV_FLAG
 
 try:
     ACCESS_KEY = os.environ['AWS_ACCESS_KEY_ID']
@@ -43,6 +46,11 @@ def push_cft_s3():
             with open(CFT_FILE_NAME) as fileh:
                 if LAMBDA_ZIP_DEV_FILE not in fileh.read():
                     raise Exception(LAMBDA_ZIP_DEV_FILE + " not found in lambda in CFT")
+            with zipfile.ZipFile(LAMBDA_ZIP_FILE, 'r', zipfile.ZIP_DEFLATED) \
+                    as zip_file:
+                if DEV_FLAG not in zip_file.namelist():
+                    raise Exception(f"Please add the dev flag file {DEV_FLAG} "
+                                    f"in {LAMBDA_ZIP_FILE}")
 
     except IndexError:
         pass
@@ -50,6 +58,11 @@ def push_cft_s3():
         with open(CFT_FILE_NAME) as fileh:
             if LAMBDA_ZIP_DEV_FILE in fileh.read():
                 raise Exception(LAMBDA_ZIP_DEV_FILE + " found in lambda in CFT. Not pushing")
+        with zipfile.ZipFile(LAMBDA_ZIP_FILE, 'r', zipfile.ZIP_DEFLATED) \
+                as zip_file:
+            if DEV_FLAG in zip_file.namelist():
+                raise Exception(f"Please remove the dev flag file {DEV_FLAG} "
+                                f"in {LAMBDA_ZIP_FILE}")
 
     try:
         s3_.upload_file(CFT_FILE_NAME, CFT_BUCKET_NAME, dst_file,
