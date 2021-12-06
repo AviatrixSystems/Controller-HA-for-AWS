@@ -33,6 +33,8 @@ AWS_US_EAST_REGION = 'us-east-1'
 
 VERSION_PREFIX = "UserConnect-"
 
+DEV_FLAG = "dev_flag"
+
 mask = lambda input: input[0:5] + '*' * 15 if isinstance(input, str) else ''
 
 
@@ -239,6 +241,9 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
 
 def _check_ami_id(ami_id):
     """ Check if AMI is latest"""
+    if os.path.exists(DEV_FLAG):
+        print("Skip checking AMI ID for dev work")
+        return True
     print("Verifying AMI ID")
     resp = requests.get(AMI_ID)
     ami_dict = json.loads(resp.content)
