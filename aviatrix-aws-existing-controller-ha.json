@@ -145,6 +145,7 @@
                         "ec2:DeleteNetworkInterface",
                         "lambda:UpdateFunctionConfiguration",
                         "lambda:GetFunction",
+                        "lambda:GetFunctionConfiguration",
                         "lambda:AddPermission",
                         "autoscaling:CreateLaunchConfiguration",
                         "autoscaling:DeleteLaunchConfiguration",

@@ -318,9 +318,25 @@ def update_env_dict(lambda_client, context, replace_dict):
     env_dict.update(replace_dict)
     os.environ.update(replace_dict)
 
+    wait_function_update_successful(lambda_client, context.function_name)
     lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                 Environment={'Variables': env_dict})
     print("Updated environment dictionary")
+
+
+def wait_function_update_successful(lambda_client, function_name,
+                                    raise_err=False):
+    """ Wait until get_function_configuration LastUpdateStatus=Successful """
+    # https://aws.amazon.com/blogs/compute/coming-soon-expansion-of-aws-lambda-states-to-all-functions/
+    try:
+        waiter = lambda_client.get_waiter("function_updated")
+        print(f"Waiting for function update to be successful: {function_name}")
+        waiter.wait(FunctionName=function_name)
+        print(f"{function_name} update state is successful")
+    except botocore.exceptions.WaiterError as err:
+        print(str(err))
+        if raise_err:
+            raise AvxError(str(err)) from err
 
 
 def login_to_controller(ip_addr, username, pwd):
@@ -416,6 +432,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
     }
     print("Setting environment %s" % env_dict)
 
+    wait_function_update_successful(lambda_client, context.function_name)
     lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                 Environment={'Variables': env_dict})
     os.environ.update(env_dict)
