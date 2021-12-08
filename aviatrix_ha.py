@@ -176,7 +176,7 @@ def _lambda_handler(event, context):
 
 
 def get_target_group_arns(inst_id):
-    """ Get a list of elb names associated with the running ec2 instance """
+    """ Get target group arns the running ec2 instance is registered to. """
     elb_client = boto3.client('elbv2')
     target_groups = elb_client.describe_target_groups().get('TargetGroups', [])
     target_group_arns = []
