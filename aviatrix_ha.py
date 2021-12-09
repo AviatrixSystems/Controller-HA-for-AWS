@@ -416,7 +416,6 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         # Tags starting with aws: is reserved
         if not key.startswith("aws:"):
             tags_stripped.append(tag)
-    target_group_arns = get_target_group_arns(inst_id)
 
     disks = []
     for volume in controller_instanceobj.get('BlockDeviceMappings', {}):
@@ -455,7 +454,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
         'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
-        'TARGET_GROUP_ARNS': json.dumps(target_group_arns),
+        'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
