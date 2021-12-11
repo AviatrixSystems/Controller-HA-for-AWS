@@ -175,6 +175,27 @@ def _lambda_handler(event, context):
         print("Unknown source. Not from CFT or SNS")
 
 
+def get_target_group_arns(inst_id):
+    """ Get target group arns the running ec2 instance is registered to. """
+    elb_client = boto3.client('elbv2')
+    target_groups = elb_client.describe_target_groups().get('TargetGroups', [])
+    target_group_arns = []
+    for tg in target_groups:
+        try:
+            target_health = elb_client.describe_target_health(
+                    TargetGroupArn=tg.get('TargetGroupArn', '')).get(
+                    'TargetHealthDescriptions', [])
+            for registered_target in target_health:
+                if registered_target.get('Target', {}).get('Id', '') == inst_id:
+                    target_group_arns.append(tg['TargetGroupArn'])
+                    break
+        except (botocore.exceptions.ClientError,
+                elb_client.exceptions.TargetGroupNotFoundException) as err:
+            print(str(err))
+    print(f"target_group_arns is {target_group_arns}")
+    return target_group_arns
+
+
 def handle_cloud_formation_request(client, event, lambda_client, controller_instanceobj, context,
                                    instance_name):
     """Handle Requests from cloud formation"""
@@ -317,6 +338,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
         'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
+        'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -432,6 +454,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
         'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
         'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
+        'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -1034,6 +1057,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     #     Filters=[{'Name': 'name','Values':
     #  [AMI_NAME]}],Owners=['self'])['Images'][0]['ImageId']
     asg_client = boto3.client('autoscaling')
+    lambda_client = boto3.client('lambda')
     sub_list = os.environ.get('SUBNETLIST')
     val_subnets = validate_subnets(sub_list.split(","))
     print("Valid subnets %s" % val_subnets)
@@ -1077,6 +1101,11 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             BlockDeviceMappings=bld_map,
             UserData="# Ignore"
         )
+
+        target_group_arns = get_target_group_arns(inst_id)
+        if target_group_arns:
+            update_env_dict(lambda_client, context,
+                    {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
     else:
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
@@ -1101,6 +1130,23 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         if not bld_map:
             del kw_args["BlockDeviceMappings"]
         asg_client.create_launch_configuration(**kw_args)
+
+        # check if target groups are still valid
+        old_target_group_arns = json.loads(os.environ.get('TARGET_GROUP_ARNS', '[]'))
+        target_group_arns = []
+        elb_client = boto3.client('elbv2')
+        for target_group_arn in old_target_group_arns:
+            try:
+                elb_client.describe_target_health(
+                        TargetGroupArn=target_group_arn)
+            except elb_client.exceptions.TargetGroupNotFoundException:
+                pass
+            else:
+                target_group_arns.append(target_group_arn)
+        if len(old_target_group_arns) != len(target_group_arns):
+            update_env_dict(lambda_client, context,
+                    {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
+    print(f"Target group arns list {target_group_arns}")
     tries = 0
     while tries < 3:
         try:
@@ -1111,6 +1157,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                 MinSize=0,
                 MaxSize=1,
                 DesiredCapacity=0 if attach_instance else 1,
+                TargetGroupARNs=target_group_arns,
                 VPCZoneIdentifier=val_subnets,
                 Tags=tags
             )
@@ -1133,7 +1180,6 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     sns_topic_arn = sns_client.create_topic(Name=sns_topic).get('TopicArn')
     os.environ['TOPIC_ARN'] = sns_topic_arn
     print('Created SNS topic %s' % sns_topic_arn)
-    lambda_client = boto3.client('lambda')
     update_env_dict(lambda_client, context, {'TOPIC_ARN': sns_topic_arn})
     lambda_fn_arn = lambda_client.get_function(
         FunctionName=context.function_name).get('Configuration').get(

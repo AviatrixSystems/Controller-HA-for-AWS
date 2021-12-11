@@ -166,7 +166,9 @@
                         "iam:PassRole",
                         "iam:CreateServiceLinkedRole",
                         "s3:GetBucketLocation",
-                        "s3:GetObject"
+                        "s3:GetObject",
+                        "elasticloadbalancing:DescribeTargetGroups",
+                        "elasticloadbalancing:DescribeTargetHealth"
                     ],
                     "Resource": "*"
                 }
