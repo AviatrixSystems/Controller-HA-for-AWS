@@ -98,14 +98,19 @@ def _lambda_handler(event, context):
         restore_security_group_access(client, tmp_sg)
     try:
         instance_name = os.environ.get('AVIATRIX_TAG')
-        controller_instanceobj = client.describe_instances(
-            Filters=[
-                {'Name': 'instance-state-name', 'Values': ['running']},
-                {'Name': 'tag:Name', 'Values': [instance_name]}]
-        )['Reservations'][0]['Instances'][0]
+        inst_id = os.environ.get('INST_ID')
+        try:
+            controller_instanceobj = client.describe_instances(
+                Filters=[
+                    {'Name': 'instance-state-name', 'Values': ['running']},
+                    {'Name': 'tag:Name', 'Values': [instance_name]}]
+            )['Reservations'][0]['Instances'][0]
+        except IndexError:
+            controller_instanceobj = client.describe_instances(
+                InstanceIds=[inst_id])['Reservations'][0]['Instances'][0]
     except Exception as err:
-        err_reason = "Can't find Controller instance with name tag %s. %s" % (instance_name,
-                                                                              str(err))
+        err_reason = ("Can't find Controller instance with name tag %s "
+                      "or inst id %s. %s" % (instance_name, inst_id, str(err)))
         print(err_reason)
         if cf_request:
             print("From CF Request")
