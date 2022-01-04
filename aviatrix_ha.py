@@ -106,11 +106,15 @@ def _lambda_handler(event, context):
                     {'Name': 'tag:Name', 'Values': [instance_name]}]
             )['Reservations'][0]['Instances'][0]
         except IndexError:
-            controller_instanceobj = client.describe_instances(
-                InstanceIds=[inst_id])['Reservations'][0]['Instances'][0]
+            if inst_id:
+                print("Can't find Controller instance with name tag %s, "
+                      "trying with inst id %s" % (instance_name, inst_id))
+                controller_instanceobj = client.describe_instances(
+                    InstanceIds=[inst_id])['Reservations'][0]['Instances'][0]
     except Exception as err:
-        err_reason = ("Can't find Controller instance with name tag %s "
-                      "or inst id %s. %s" % (instance_name, inst_id, str(err)))
+        inst_id_err = " or inst id %s" % inst_id if inst_id else ""
+        err_reason = "Can't find Controller instance with name tag %s%s. %s" % (
+                     instance_name, inst_id_err, str(err))
         print(err_reason)
         if cf_request:
             print("From CF Request")
