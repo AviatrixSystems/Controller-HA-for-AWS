@@ -1228,6 +1228,11 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
     asg_client = boto3.client('autoscaling')
     if detach_instances:
         try:
+            # in case customer manually changed the MinSize to greater than 0.
+            asg_client.update_auto_scaling_group(
+                AutoScalingGroupName=asg_name,
+                MinSize=0)
+            print("Updated asg MinSize to be 0 before detaching")
             asg_client.detach_instances(
                 InstanceIds=[inst_id],
                 AutoScalingGroupName=asg_name,
