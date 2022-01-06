@@ -111,6 +111,8 @@ def _lambda_handler(event, context):
                       "trying with inst id %s" % (instance_name, inst_id))
                 controller_instanceobj = client.describe_instances(
                     InstanceIds=[inst_id])['Reservations'][0]['Instances'][0]
+            else:
+                raise
     except Exception as err:
         inst_id_err = " or inst id %s" % inst_id if inst_id else ""
         err_reason = "Can't find Controller instance with name tag %s%s. %s" % (
