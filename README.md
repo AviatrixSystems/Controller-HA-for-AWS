@@ -91,6 +91,9 @@ This script is only supported for Aviatrix Controller version >= 3.4
 You will need to allow the service-linked role created for the Autoscaling group to have permissions to use this key for the cryptographic operation.
 To do so, go to AWS KMS->Customer managed keys->select the key and add the "AWSServiceRoleForAutoScaling" role to the list of Key Users.
 
+9. What do I need to do after I change the controller name?
+   - Please delete the CFT stack and then create a new CFT stack using the new controller name.
+
 ### Changelog
 
 The changes between various releases can be viewed from [here](https://github.com/AviatrixSystems/Controller-HA-for-AWS/releases)
