@@ -20,12 +20,9 @@ import version
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
-MAX_LOGIN_TIMEOUT = 800
+HANDLE_HA_TIMEOUT = 840 # 14 min
 WAIT_DELAY = 30
-
-INITIAL_SETUP_WAIT = 180
 INITIAL_SETUP_DELAY = 10
-
 INITIAL_SETUP_API_WAIT = 20
 AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json'
 MAXIMUM_BACKUP_AGE = 24 * 3600 * 3  # 3 days
@@ -837,6 +834,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     2. Assign the EIP to the new controller
     3. Run initial setup to boot to specific version parsed from backup
     4. Login again and restore the configuration """
+    start_time = time.time()
     old_inst_id = os.environ.get('INST_ID')
     if old_inst_id == controller_instanceobj['InstanceId']:
         print("Controller is already saved. Not restoring")
@@ -873,18 +871,16 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {'TMP_SG_GRP': sg_modified})
-        total_time = 0
-        while total_time <= MAX_LOGIN_TIMEOUT:
+        while time.time() - start_time < HANDLE_HA_TIMEOUT:
             try:
                 cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
             except Exception as err:
                 print(str(err))
                 print("Login failed, trying again in " + str(WAIT_DELAY))
-                total_time += WAIT_DELAY
                 time.sleep(WAIT_DELAY)
             else:
                 break
-        if total_time >= MAX_LOGIN_TIMEOUT:
+        if time.time() - start_time >= HANDLE_HA_TIMEOUT:
             print("Could not login to the controller. Attempting to handle login failure")
             handle_login_failure(controller_api_ip, client, lambda_client, controller_instanceobj,
                                  context, eip)
@@ -900,18 +896,18 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
 
         temp_acc_name = "tempacc"
 
-        total_time = 0
         sleep = False
         created_temp_acc = False
         login_complete = False
         response_json = {}
-        while total_time <= INITIAL_SETUP_WAIT:
+        while time.time() - start_time < HANDLE_HA_TIMEOUT:
+            print("Maximum of " +
+                  str(int(HANDLE_HA_TIMEOUT - (time.time() - start_time))) +
+                  " seconds remaining")
             if sleep:
-                print("Waiting for safe initial setup completion, maximum of " +
-                      str(INITIAL_SETUP_WAIT - total_time) + " seconds remaining")
+                print("Waiting for safe initial setup completion")
                 time.sleep(WAIT_DELAY)
             else:
-                print(f"{INITIAL_SETUP_WAIT - total_time} seconds remaining")
                 sleep = True
             if not login_complete:
                 # Need to login again as initial setup invalidates cid after waiting
@@ -922,7 +918,6 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                     print("Cannot connect to the controller")
                     sleep = False
                     time.sleep(INITIAL_SETUP_DELAY)
-                    total_time += INITIAL_SETUP_DELAY
                     continue
                 else:
                     login_complete = True
@@ -953,10 +948,8 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 return
             if response_json.get('reason', '') == 'account_password required.':
                 print("API is not ready yet, requires account_password")
-                total_time += WAIT_DELAY
             elif response_json.get('reason', '') == 'valid action required':
                 print("API is not ready yet")
-                total_time += WAIT_DELAY
             elif response_json.get('reason', '') == 'CID is invalid or expired.' or \
                     "Invalid session. Please login again." in response_json.get('reason', '') or \
                     f"Session {cid} not found" in response_json.get('reason', '') or \
@@ -970,17 +963,14 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             elif response_json.get('reason', '') == 'not run':
                 print('Initial setup not complete..waiting')
                 time.sleep(INITIAL_SETUP_DELAY)
-                total_time += INITIAL_SETUP_DELAY
                 sleep = False
             elif 'Remote end closed connection without response' in response_json.get('reason', ''):
                 print('Remote side closed the connection..waiting')
                 time.sleep(INITIAL_SETUP_DELAY)
-                total_time += INITIAL_SETUP_DELAY
                 sleep = False
             elif "Failed to establish a new connection" in response_json.get('reason', '') \
                     or "Max retries exceeded with url" in response_json.get('reason', ''):
                 print('Failed to connect to the controller')
-                total_time += WAIT_DELAY
             else:
                 print("Restoring backup failed due to " +
                       str(response_json.get('reason', '')))
