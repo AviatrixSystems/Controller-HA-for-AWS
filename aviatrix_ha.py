@@ -347,6 +347,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
         'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
         'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
+        'DISABLE_API_TERMINATION': os.environ.get('DISABLE_API_TERMINATION', "False"),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -463,6 +464,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
         'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
         'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
+        'DISABLE_API_TERMINATION': os.environ.get('DISABLE_API_TERMINATION', "False"),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -579,6 +581,20 @@ def is_upgrade_to_build_supported(ip_addr, cid):
     except (ValueError, TypeError):
         print("json decode failed: {}".format(response.content))
     print("Upgrade to build is not supported")
+    return False
+
+
+def is_controller_termination_protected(inst_id):
+    """ Check if the controller instance has API termination protection """
+    try:
+        enabled = boto3.client('ec2').describe_instance_attribute(
+            Attribute='disableApiTermination',
+            InstanceId=inst_id)['DisableApiTermination']['Value']
+        print("Controller termination protection is {}enabled".format(
+              "" if enabled else "not "))
+        return enabled
+    except Exception as err:
+        print(str(err))
     return False
 
 
@@ -839,6 +855,20 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     if old_inst_id == controller_instanceobj['InstanceId']:
         print("Controller is already saved. Not restoring")
         return
+    if os.environ.get('DISABLE_API_TERMINATION') == "True":
+        try:
+            boto3.resource('ec2').Instance(
+                controller_instanceobj['InstanceId']) \
+                .modify_attribute(
+                    DisableApiTermination={
+                    'Value': True
+                    })
+            print("Updated controller instance termination protection "
+                  "to be true")
+        except Exception as err:
+            print(err)
+    else:
+        print("Not updating controller instance termination protection")
     if not assign_eip(client, controller_instanceobj, os.environ.get('EIP')):
         raise AvxError("Could not assign EIP")
     eip = os.environ.get('EIP')
@@ -1107,6 +1137,9 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         if target_group_arns:
             update_env_dict(lambda_client, context,
                     {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
+        if is_controller_termination_protected(inst_id):
+            update_env_dict(lambda_client, context,
+                    {'DISABLE_API_TERMINATION': "True"})
     else:
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
