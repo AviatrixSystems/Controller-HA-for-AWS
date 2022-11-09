@@ -771,7 +771,8 @@ def create_cloud_account(cid, controller_ip, account_name):
                  "aws_role_arn": "arn:aws:iam::%s:role/%s" % (aws_acc_num, get_role("AWS_ROLE_APP_NAME", "aviatrix-role-app")),
                  "aws_role_ec2": "arn:aws:iam::%s:role/%s" % (aws_acc_num, get_role("AWS_ROLE_EC2_NAME", "aviatrix-role-ec2")),
                  "cloud_type": 1,
-                 "aws_iam": "true"}
+                 "aws_iam": "true",
+                 "skip_sg_config": "true"}
     print("Trying to create account with data %s\n" % str(post_data))
     post_data["CID"] = cid
     try:
