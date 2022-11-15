@@ -1,5 +1,6 @@
 """ Aviatrix Controller HA Lambda script """
 # pylint: disable=too-many-lines,too-many-locals,too-many-branches,too-many-return-statements
+# pylint: disable=too-many-statements,too-many-arguments,broad-except
 import time
 import os
 import uuid
@@ -32,7 +33,7 @@ VERSION_PREFIX = "UserConnect-"
 
 DEV_FLAG = "dev_flag"
 
-mask = lambda input: input[0:5] + '*' * 15 if isinstance(input, str) else ''
+MASK = lambda input: input[0:5] + '*' * 15 if isinstance(input, str) else ''
 
 
 class AvxError(Exception):
@@ -188,14 +189,14 @@ def get_target_group_arns(inst_id):
     elb_client = boto3.client('elbv2')
     target_groups = elb_client.describe_target_groups().get('TargetGroups', [])
     target_group_arns = []
-    for tg in target_groups:
+    for tg_ in target_groups:
         try:
             target_health = elb_client.describe_target_health(
-                TargetGroupArn=tg.get('TargetGroupArn', '')).get(
+                TargetGroupArn=tg_.get('TargetGroupArn', '')).get(
                     'TargetHealthDescriptions', [])
             for registered_target in target_health:
                 if registered_target.get('Target', {}).get('Id', '') == inst_id:
-                    target_group_arns.append(tg['TargetGroupArn'])
+                    target_group_arns.append(tg_['TargetGroupArn'])
                     break
         except (botocore.exceptions.ClientError,
                 elb_client.exceptions.TargetGroupNotFoundException) as err:
@@ -418,7 +419,7 @@ def login_to_controller(ip_addr, username, pwd):
     response_json = response.json()
     try:
         cid = response_json.pop('CID')
-        print("Created new session with CID {}\n".format(mask(cid)))
+        print("Created new session with CID {}\n".format(MASK(cid)))
     except KeyError as err:
         print(response_json)
         print("Unable to create session. {}".format(err))
@@ -783,6 +784,7 @@ def enable_t2_unlimited(client, inst_id):
 
 
 def get_role(role, default):
+    """ Get Role name from the environment """
     name = os.environ.get(role)
     if len(name) == 0:
         return default
