@@ -375,13 +375,42 @@ def wait_function_update_successful(lambda_client, function_name,
             raise AvxError(str(err)) from err
 
 
+def get_api_token(ip_):
+    """ Get API token from controller. Older controllers that don't support it will not have this
+    API or endpoints. We return None in that scenario to be backkward compatible """
+    try:
+        data = requests.post(f'https://{ip_}/v2/api?action=get_api_token', verify=False)
+    except requests.exceptions.ConnectionError as err:
+        print("Can't connect to controller with elastic IP %s. %s" % (ip_, str(err)))
+        raise AvxError(str(err)) from err
+    try:
+        out = json.loads(data.content)
+    except ValueError:
+        print(f"Token is probably not supported. Reponse is {out}")
+    else:
+        try:
+            token = out['results']['api_token']
+        except (ValueError, AttributeError):
+            print(f"Token is probably not supported. Reponse is {out}")
+        else:
+            print('Obtained token')
+            return token
+    print('Did not obtain token')
+    return None
+
+
 def login_to_controller(ip_addr, username, pwd):
     """ Logs into the controller and returns the cid"""
+    token = get_api_token()
+    headers = {}
+    if token:
+        headers = {"Content-Type": "application/x-www-form-urlencoded",
+                   "X-Access-Key": token}
     base_url = "https://" + ip_addr + "/v1/api"
     url = base_url + "?action=login&username=" + username + "&password=" + \
           urllib.parse.quote(pwd, '%')
     try:
-        response = requests.get(url, verify=False)
+        response = requests.get(url, verify=False, headers=headers)
     except Exception as err:
         print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
                                                                       str(err)))
