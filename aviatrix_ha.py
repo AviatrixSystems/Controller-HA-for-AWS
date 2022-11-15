@@ -1,5 +1,5 @@
 """ Aviatrix Controller HA Lambda script """
-
+# pylint: disable=too-many-lines,too-many-locals,too-many-branches,too-many-return-statements
 import time
 import os
 import uuid
@@ -113,7 +113,7 @@ def _lambda_handler(event, context):
     except Exception as err:
         inst_id_err = " or inst id %s" % inst_id if inst_id else ""
         err_reason = "Can't find Controller instance with name tag %s%s. %s" % (
-                     instance_name, inst_id_err, str(err))
+            instance_name, inst_id_err, str(err))
         print(err_reason)
         if cf_request:
             print("From CF Request")
@@ -191,7 +191,7 @@ def get_target_group_arns(inst_id):
     for tg in target_groups:
         try:
             target_health = elb_client.describe_target_health(
-                    TargetGroupArn=tg.get('TargetGroupArn', '')).get(
+                TargetGroupArn=tg.get('TargetGroupArn', '')).get(
                     'TargetHealthDescriptions', [])
             for registered_target in target_health:
                 if registered_target.get('Target', {}).get('Id', '') == inst_id:
@@ -401,7 +401,7 @@ def get_api_token(ip_):
 
 def login_to_controller(ip_addr, username, pwd):
     """ Logs into the controller and returns the cid"""
-    token = get_api_token()
+    token = get_api_token(ip_addr)
     headers = {}
     if token:
         headers = {"Content-Type": "application/x-www-form-urlencoded",
@@ -620,7 +620,7 @@ def is_controller_termination_protected(inst_id):
             Attribute='disableApiTermination',
             InstanceId=inst_id)['DisableApiTermination']['Value']
         print("Controller termination protection is {}enabled".format(
-              "" if enabled else "not "))
+            "" if enabled else "not "))
         return enabled
     except Exception as err:
         print(str(err))
@@ -657,7 +657,7 @@ def retrieve_controller_version(version_file):
     except (KeyboardInterrupt, IndexError, ValueError) as err:
         raise AvxError("Could not decode version") from err
     print("Parsed version sucessfully {} and {}".format(
-          ctrl_version, ctrl_version_with_build))
+        ctrl_version, ctrl_version_with_build))
     return ctrl_version, ctrl_version_with_build
 
 
@@ -784,9 +784,10 @@ def enable_t2_unlimited(client, inst_id):
 
 def get_role(role, default):
     name = os.environ.get(role)
-    if len(name) == 0 :
+    if len(name) == 0:
         return default
     return name
+
 
 def create_cloud_account(cid, controller_ip, account_name):
     """ Create a temporary account to restore the backup"""
@@ -794,14 +795,19 @@ def create_cloud_account(cid, controller_ip, account_name):
     client = boto3.client('sts')
     aws_acc_num = client.get_caller_identity()["Account"]
     base_url = "https://%s/v1/api" % controller_ip
-    post_data = {"action": "setup_account_profile",
-                 "account_name": account_name,
-                 "aws_account_number": aws_acc_num,
-                 "aws_role_arn": "arn:aws:iam::%s:role/%s" % (aws_acc_num, get_role("AWS_ROLE_APP_NAME", "aviatrix-role-app")),
-                 "aws_role_ec2": "arn:aws:iam::%s:role/%s" % (aws_acc_num, get_role("AWS_ROLE_EC2_NAME", "aviatrix-role-ec2")),
-                 "cloud_type": 1,
-                 "aws_iam": "true",
-                 "skip_sg_config": "true"}
+    post_data = {
+        "action": "setup_account_profile",
+        "account_name": account_name,
+        "aws_account_number": aws_acc_num,
+        "aws_role_arn":
+            "arn:aws:iam::%s:role/%s" % (aws_acc_num,
+                                         get_role("AWS_ROLE_APP_NAME", "aviatrix-role-app")),
+        "aws_role_ec2":
+            "arn:aws:iam::%s:role/%s" % (aws_acc_num,
+                                         get_role("AWS_ROLE_EC2_NAME", "aviatrix-role-ec2")),
+        "cloud_type": 1,
+        "aws_iam": "true",
+        "skip_sg_config": "true"}
     print("Trying to create account with data %s\n" % str(post_data))
     post_data["CID"] = cid
     try:
@@ -887,12 +893,9 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
         return
     if os.environ.get('DISABLE_API_TERMINATION') == "True":
         try:
-            boto3.resource('ec2').Instance(
+            boto3.resource('ec2').Instance(  # pylint: disable=no-member
                 controller_instanceobj['InstanceId']) \
-                .modify_attribute(
-                    DisableApiTermination={
-                    'Value': True
-                    })
+                .modify_attribute(DisableApiTermination={'Value': True})
             print("Updated controller instance termination protection "
                   "to be true")
         except Exception as err:
@@ -948,7 +951,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
 
         version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
         ctrl_version, ctrl_version_with_build = retrieve_controller_version(
-                version_file)
+            version_file)
         if is_upgrade_to_build_supported(controller_api_ip, cid):
             ctrl_version = ctrl_version_with_build
 
@@ -1166,10 +1169,10 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         target_group_arns = get_target_group_arns(inst_id)
         if target_group_arns:
             update_env_dict(lambda_client, context,
-                    {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
+                            {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
         if is_controller_termination_protected(inst_id):
             update_env_dict(lambda_client, context,
-                    {'DISABLE_API_TERMINATION': "True"})
+                            {'DISABLE_API_TERMINATION': "True"})
     else:
         print("Setting launch config from environment")
         iam_arn = os.environ.get('IAM_ARN')
@@ -1202,14 +1205,14 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         for target_group_arn in old_target_group_arns:
             try:
                 elb_client.describe_target_health(
-                        TargetGroupArn=target_group_arn)
+                    TargetGroupArn=target_group_arn)
             except elb_client.exceptions.TargetGroupNotFoundException:
                 pass
             else:
                 target_group_arns.append(target_group_arn)
         if len(old_target_group_arns) != len(target_group_arns):
             update_env_dict(lambda_client, context,
-                    {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
+                            {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
     print(f"Target group arns list {target_group_arns}")
     tries = 0
     while tries < 3:
@@ -1246,8 +1249,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     print('Created SNS topic %s' % sns_topic_arn)
     update_env_dict(lambda_client, context, {'TOPIC_ARN': sns_topic_arn})
     lambda_fn_arn = lambda_client.get_function(
-        FunctionName=context.function_name).get('Configuration').get(
-        'FunctionArn')
+        FunctionName=context.function_name).get('Configuration').get('FunctionArn')
     sns_client.subscribe(TopicArn=sns_topic_arn,
                          Protocol='lambda',
                          Endpoint=lambda_fn_arn).get('SubscriptionArn')
