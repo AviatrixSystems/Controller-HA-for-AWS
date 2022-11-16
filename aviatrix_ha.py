@@ -392,7 +392,8 @@ def get_api_token(ip_):
     else:
         try:
             token = out['results']['api_token']
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, TypeError, KeyError) as err:
+            print(f"Getting token failed due to {err}")
             print(f"Token is probably not supported. Reponse is {out}")
         else:
             print('Obtained token')
