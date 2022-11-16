@@ -380,7 +380,7 @@ def get_api_token(ip_addr):
     """ Get API token from controller. Older controllers that don't support it will not have this
     API or endpoints. We return None in that scenario to be backkward compatible """
     try:
-        data = requests.post(f'https://{ip_addr}/v2/api?action=get_api_token', verify=False)
+        data = requests.get(f'https://{ip_addr}/v2/api?action=get_api_token', verify=False)
     except requests.exceptions.ConnectionError as err:
         print("Can't connect to controller with elastic IP %s. %s" % (ip_addr, str(err)))
         raise AvxError(str(err)) from err
