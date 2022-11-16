@@ -384,10 +384,11 @@ def get_api_token(ip_):
     except requests.exceptions.ConnectionError as err:
         print("Can't connect to controller with elastic IP %s. %s" % (ip_, str(err)))
         raise AvxError(str(err)) from err
+    buf = data.content
     try:
-        out = json.loads(data.content)
+        out = json.loads(buf)
     except ValueError:
-        print(f"Token is probably not supported. Reponse is {out}")
+        print(f"Token is probably not supported. Reponse is {buf}")
     else:
         try:
             token = out['results']['api_token']
