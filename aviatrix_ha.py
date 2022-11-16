@@ -417,13 +417,17 @@ def login_to_controller(ip_addr, username, pwd):
         print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
                                                                       str(err)))
         raise AvxError(str(err)) from err
-    response_json = response.json()
+    try:
+        response_json = response.json()
+    except ValueError as err:
+        print(f"response not in json {response}")
+        raise AvxError("Unable to create session. {}".format(response)) from err
     try:
         cid = response_json.pop('CID')
         print("Created new session with CID {}\n".format(MASK(cid)))
     except KeyError as err:
         print(response_json)
-        print("Unable to create session. {}".format(err))
+        print("Unable to create session. {} {}".format(err, response_json))
         raise AvxError("Unable to create session. {}".format(err)) from err
     print(response_json)
     return cid
@@ -940,9 +944,11 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
         while time.time() - start_time < HANDLE_HA_TIMEOUT:
             try:
                 cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
-            except Exception as err:
-                print(str(err))
-                print("Login failed, trying again in " + str(WAIT_DELAY))
+            except AvxError as err:
+                print(f"Login failed due to {err} trying again in {WAIT_DELAY}")
+                time.sleep(WAIT_DELAY)
+            except Exception:
+                print(f'Login failed due to {traceback.format_exc()} trying again in {WAIT_DELAY}')
                 time.sleep(WAIT_DELAY)
             else:
                 break
