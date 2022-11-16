@@ -413,7 +413,7 @@ def login_to_controller(ip_addr, username, pwd):
         base_url = "https://" + ip_addr + "/v2/api"
     try:
         response = requests.post(base_url, verify=False, headers=headers,
-                                 data={'username': username, 'password': pwd})
+                                 data={'username': username, 'password': pwd, 'action': 'login'})
     except Exception as err:
         print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
                                                                       str(err)))
