@@ -16,10 +16,10 @@ from aviatrix_ha import DEV_FLAG
 try:
     ACCESS_KEY = os.environ['AWS_ACCESS_KEY_ID']
     SECRET_KEY = os.environ['AWS_SECRET_ACCESS_KEY']
-    SESSION_TOKEN = os.environ['AWS_SESSION_TOKEN']
+    SESSION_TOKEN = os.environ.get('AWS_SESSION_TOKEN')
 except KeyError as err:
-    raise Exception("use as ACCESS_KEY=xxxx SECRET_KEY=yyyy python push_to_s3.py."
-                    " For dev add --dev") from err
+    raise Exception("use as AWS_ACCESS_KEY_ID=xxxx AWS_SECRET_ACCESS_KEY=yyyy AWS_SESSION_TOKEN=zzz"
+                    " python push_to_s3.py. For dev add --dev") from err
 
 BUCKET_PREFIX = "aviatrix-lambda-"
 LAMBDA_ZIP_FILE = 'aviatrix_ha.zip'
@@ -107,7 +107,7 @@ def push_lambda_file_in_region(region):
     #     if "BucketAlreadyOwnedByYou" in str(err):
     #         pass
     #     else:
-    #         print traceback.format_exc()
+    #         print(traceback.format_exc())
 
     dst_file = LAMBDA_ZIP_FILE
     try:
