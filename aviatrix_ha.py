@@ -406,14 +406,14 @@ def login_to_controller(ip_addr, username, pwd):
     """ Logs into the controller and returns the cid"""
     token = get_api_token(ip_addr)
     headers = {}
+    base_url = "https://" + ip_addr + "/v1/api"
     if token:
         headers = {"Content-Type": "application/x-www-form-urlencoded",
                    "X-Access-Key": token}
-    base_url = "https://" + ip_addr + "/v1/api"
-    url = base_url + "?action=login&username=" + username + "&password=" + \
-          urllib.parse.quote(pwd, '%')
+        base_url = "https://" + ip_addr + "/v2/api"
     try:
-        response = requests.get(url, verify=False, headers=headers)
+        response = requests.post(base_url, verify=False, headers=headers,
+                                 data={'username': username, 'password': pwd})
     except Exception as err:
         print("Can't connect to controller with elastic IP %s. %s" % (ip_addr,
                                                                       str(err)))
