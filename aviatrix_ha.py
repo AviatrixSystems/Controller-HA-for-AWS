@@ -1154,14 +1154,13 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             disk_config = {"Ebs": {"VolumeSize": disk["Size"],
                                    "VolumeType": disk['VolumeType'],
                                    "DeleteOnTermination": disk['DeleteOnTermination'],
-                                   # "Encrypted": disk["Encrypted"],  # Encrypted cannot be set
-                                   #  since snapshot is specified
+                                   "Encrypted": disk["Encrypted"],
                                    "Iops": disk.get("Iops", '')},
                            'DeviceName': '/dev/sda1'}
             if not disk_config["Ebs"]["Iops"]:
                 del disk_config["Ebs"]["Iops"]
             bld_map.append(disk_config)
-
+    print("Block device configuration", bld_map)
     if not bld_map:
         print("bld map is empty")
         raise AvxError("Could not find any disks attached to the controller")
