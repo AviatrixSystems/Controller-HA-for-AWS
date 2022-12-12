@@ -17,6 +17,7 @@ import botocore
 import version
 from api.login import login_to_controller
 from errors.exceptions import AvxError
+from csp.instance import get_controller_instance
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -86,33 +87,17 @@ def _lambda_handler(event, context):
         print("Lambda probably did not complete last time. Reverting sg %s" % tmp_sg)
         update_env_dict(lambda_client, context, {'TMP_SG_GRP': ''})
         restore_security_group_access(client, tmp_sg)
-    try:
-        instance_name = os.environ.get('AVIATRIX_TAG')
-        inst_id = os.environ.get('INST_ID')
-        try:
-            controller_instanceobj = client.describe_instances(
-                Filters=[
-                    {'Name': 'instance-state-name', 'Values': ['running']},
-                    {'Name': 'tag:Name', 'Values': [instance_name]}]
-            )['Reservations'][0]['Instances'][0]
-        except IndexError:
-            if inst_id:
-                print("Can't find Controller instance with name tag %s, "
-                      "trying with inst id %s" % (instance_name, inst_id))
-                controller_instanceobj = client.describe_instances(
-                    InstanceIds=[inst_id])['Reservations'][0]['Instances'][0]
-            else:
-                raise
-    except Exception as err:
-        inst_id_err = " or inst id %s" % inst_id if inst_id else ""
-        err_reason = "Can't find Controller instance with name tag %s%s. %s" % (
-            instance_name, inst_id_err, str(err))
-        print(err_reason)
-        if cf_request:
+    instance_name = os.environ.get('AVIATRIX_TAG')
+    inst_id = os.environ.get('INST_ID')
+    print(f"Trying describe with name {instance_name} and ID {inst_id}")
+    describe_err, controller_instanceobj = get_controller_instance(client, instance_name, inst_id)
+
+    if cf_request:
+        if describe_err:
             print("From CF Request")
             if event.get("RequestType", None) == 'Create':
                 print("Create Event")
-                send_response(event, context, 'FAILED', err_reason)
+                send_response(event, context, 'FAILED', describe_err)
                 return
             print("Ignoring delete CFT for no Controller")
             # While deleting cloud formation template, this lambda function
@@ -122,17 +107,6 @@ def _lambda_handler(event, context):
             send_response(event, context, 'SUCCESS', '')
             return
 
-        try:
-            sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
-            print(sns_msg_event)
-        except (KeyError, IndexError, ValueError) as err:
-            raise AvxError("1.Could not parse SNS message %s" % str(err)) from err
-        if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
-            print("Not from launch error. Exiting")
-            return
-        print("From the instance launch error. Will attempt to re-create Auto scaling group")
-
-    if cf_request:
         try:
             response_status, err_reason = handle_cloud_formation_request(
                 client, event, lambda_client, controller_instanceobj, context, instance_name)
@@ -151,6 +125,16 @@ def _lambda_handler(event, context):
         send_response(event, context, response_status, err_reason)
         print("Sent {} to CFT.".format(response_status))
     elif sns_event:
+        if describe_err:
+            try:
+                sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
+                print(sns_msg_event)
+            except (KeyError, IndexError, ValueError) as err:
+                raise AvxError("1.Could not parse SNS message %s" % str(err)) from err
+            if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
+                print("Not from launch error. Exiting")
+                return
+            print("From the instance launch error. Will attempt to re-create Auto scaling group")
         try:
             sns_msg_json = json.loads(event["Records"][0]["Sns"]["Message"])
             sns_msg_event = sns_msg_json['Event']
