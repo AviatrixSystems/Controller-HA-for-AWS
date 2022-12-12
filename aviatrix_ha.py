@@ -16,6 +16,7 @@ import boto3
 import botocore
 import version
 from api.login import login_to_controller
+from errors.exceptions import AvxError
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -30,13 +31,6 @@ AWS_US_EAST_REGION = 'us-east-1'
 VERSION_PREFIX = "UserConnect-"
 
 DEV_FLAG = "dev_flag"
-
-MASK = lambda input: input[0:5] + '*' * 15 if isinstance(input, str) else ''
-
-
-class AvxError(Exception):
-    """ Error class for Aviatrix exceptions"""
-
 
 print('Loading function')
 
@@ -372,32 +366,6 @@ def wait_function_update_successful(lambda_client, function_name,
         print(str(err))
         if raise_err:
             raise AvxError(str(err)) from err
-
-
-def get_api_token(ip_addr):
-    """ Get API token from controller. Older controllers that don't support it will not have this
-    API or endpoints. We return None in that scenario to be backkward compatible """
-    try:
-        data = requests.get(f'https://{ip_addr}/v2/api?action=get_api_token', verify=False)
-    except requests.exceptions.ConnectionError as err:
-        print("Can't connect to controller with elastic IP %s. %s" % (ip_addr, str(err)))
-        raise AvxError(str(err)) from err
-    buf = data.content
-    try:
-        out = json.loads(buf)
-    except ValueError:
-        print(f"Token is probably not supported. Reponse is {buf}")
-    else:
-        try:
-            token = out['results']['api_token']
-        except (ValueError, AttributeError, TypeError, KeyError) as err:
-            print(f"Getting token failed due to {err}")
-            print(f"Token is probably not supported. Reponse is {out}")
-        else:
-            print('Obtained token')
-            return token
-    print('Did not obtain token')
-    return None
 
 
 def set_environ(client, lambda_client, controller_instanceobj, context,
