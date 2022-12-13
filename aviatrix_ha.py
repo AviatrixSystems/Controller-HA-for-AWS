@@ -15,8 +15,7 @@ from errors.exceptions import AvxError
 from csp.instance import get_controller_instance
 from handlers.cft.create import setup_ha
 from handlers.cft.delete import delete_resources
-from handlers.cft.handler import handle_cloud_formation_request
-from handlers.cft.response import send_response
+from handlers.cft.handler import handle_cft
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -80,37 +79,8 @@ def _lambda_handler(event, context):
     describe_err, controller_instanceobj = get_controller_instance(client, instance_name, inst_id)
 
     if cf_request:
-        if describe_err:
-            print("From CF Request")
-            if event.get("RequestType", None) == 'Create':
-                print("Create Event")
-                send_response(event, context, 'FAILED', describe_err)
-                return
-            print("Ignoring delete CFT for no Controller")
-            # While deleting cloud formation template, this lambda function
-            # will be called to delete AssignEIP resource. If the controller
-            # instance is not present, then cloud formation will be stuck
-            # in deletion.So just pass in that case.
-            send_response(event, context, 'SUCCESS', '')
-            return
-
-        try:
-            response_status, err_reason = handle_cloud_formation_request(
-                client, event, lambda_client, controller_instanceobj, context, instance_name)
-        except AvxError as err:
-            err_reason = str(err)
-            print(err_reason)
-            response_status = 'FAILED'
-        except Exception as err:  # pylint: disable=broad-except
-            err_reason = str(err)
-            print(traceback.format_exc())
-            response_status = 'FAILED'
-
-        # Send response to CFT.
-        if response_status not in ['SUCCESS', 'FAILED']:
-            response_status = 'FAILED'
-        send_response(event, context, response_status, err_reason)
-        print("Sent {} to CFT.".format(response_status))
+        handle_cft(describe_err, event, context, client, lambda_client, controller_instanceobj,
+                   instance_name)
     elif sns_event:
         if describe_err:
             try:
