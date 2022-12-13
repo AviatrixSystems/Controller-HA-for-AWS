@@ -54,3 +54,12 @@ def is_controller_termination_protected(inst_id):
     except Exception as err:
         print(str(err))
     return False
+
+
+def verify_iam(controller_instanceobj):
+    """ Verify IAM roles"""
+    print("Verifying IAM roles ")
+    iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
+    if not iam_arn:
+        return False
+    return True
