@@ -15,24 +15,24 @@ import requests
 import boto3
 import botocore
 import version
+from api.account import create_cloud_account
+from api.external.ami import check_ami_id
+from api.cust import set_customer_id
+from api.initial_setup import get_initial_setup_status, run_initial_setup
 from api.login import login_to_controller
+from api.restore import restore_backup
+from common.constants import HANDLE_HA_TIMEOUT, WAIT_DELAY, INITIAL_SETUP_DELAY
+from csp.keypair import validate_keypair
+from csp.lambda_c import wait_function_update_successful
+from csp.s3 import retrieve_controller_version
 from csp.sg import restore_security_group_access, temp_add_security_group_access
 from errors.exceptions import AvxError
-from csp.instance import get_controller_instance
+from csp.instance import get_controller_instance, enable_t2_unlimited
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
-HANDLE_HA_TIMEOUT = 840 # 14 min
-WAIT_DELAY = 30
-INITIAL_SETUP_DELAY = 10
-INITIAL_SETUP_API_WAIT = 20
-AMI_ID = 'https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json'
 MAXIMUM_BACKUP_AGE = 24 * 3600 * 3  # 3 days
 AWS_US_EAST_REGION = 'us-east-1'
-
-VERSION_PREFIX = "UserConnect-"
-
-DEV_FLAG = "dev_flag"
 
 print('Loading function')
 
@@ -214,7 +214,7 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
         if not assign_eip(client, controller_instanceobj, None):
             return 'FAILED', 'Failed to associate EIP or EIP was not found.' \
                              ' Please attach an EIP to the controller before enabling HA'
-        if not _check_ami_id(controller_instanceobj['ImageId']):
+        if not check_ami_id(controller_instanceobj['ImageId']):
             return 'FAILED', "AMI is not latest. Cannot enable Controller HA. Please backup" \
                              "/restore to the latest AMI before enabling controller HA"
 
@@ -244,23 +244,6 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
                   " name {}.".format(instance_name))
             response_status = 'FAILED'
     return response_status, err_reason
-
-
-def _check_ami_id(ami_id):
-    """ Check if AMI is latest"""
-    if os.path.exists(DEV_FLAG):
-        print("Skip checking AMI ID for dev work")
-        return True
-    print("Verifying AMI ID")
-    resp = requests.get(AMI_ID)
-    ami_dict = json.loads(resp.content)
-    for image_type in ami_dict:
-        if ami_id in list(ami_dict[image_type].values()):
-            print("AMI is valid")
-            return True
-    print("AMI is not latest. Cannot enable Controller HA. Please backup restore to the latest AMI"
-          "before enabling controller HA")
-    return False
 
 
 def create_new_sg(client):
@@ -336,21 +319,6 @@ def update_env_dict(lambda_client, context, replace_dict):
     lambda_client.update_function_configuration(FunctionName=context.function_name,
                                                 Environment={'Variables': env_dict})
     print("Updated environment dictionary")
-
-
-def wait_function_update_successful(lambda_client, function_name,
-                                    raise_err=False):
-    """ Wait until get_function_configuration LastUpdateStatus=Successful """
-    # https://aws.amazon.com/blogs/compute/coming-soon-expansion-of-aws-lambda-states-to-all-functions/
-    try:
-        waiter = lambda_client.get_waiter("function_updated")
-        print(f"Waiting for function update to be successful: {function_name}")
-        waiter.wait(FunctionName=function_name)
-        print(f"{function_name} update state is successful")
-    except botocore.exceptions.WaiterError as err:
-        print(str(err))
-        if raise_err:
-            raise AvxError(str(err)) from err
 
 
 def set_environ(client, lambda_client, controller_instanceobj, context,
@@ -553,89 +521,6 @@ def is_controller_termination_protected(inst_id):
     return False
 
 
-def retrieve_controller_version(version_file):
-    """ Get the controller version from backup file"""
-    print("Retrieving version from file " + str(version_file))
-    s3c = boto3.client('s3', region_name=os.environ['S3_BUCKET_REGION'])
-    try:
-        with open('/tmp/version_ctrlha.txt', 'wb') as data:
-            s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), version_file,
-                                 data)
-    except botocore.exceptions.ClientError as err:
-        if err.response['Error']['Code'] == "404":
-            print("The object does not exist.")
-            raise AvxError("The cloudx version file does not exist") from err
-        raise
-    if not os.path.exists('/tmp/version_ctrlha.txt'):
-        raise AvxError("Unable to open version file")
-    with open("/tmp/version_ctrlha.txt") as fileh:
-        buf = fileh.read()
-    print("Retrieved version " + str(buf))
-    if not buf:
-        raise AvxError("Version file is empty")
-    print("Parsing version")
-    if buf.startswith(VERSION_PREFIX):
-        buf = buf[len(VERSION_PREFIX):]
-    try:
-        ver_list = buf.split(".")
-        ctrl_version = ".".join(ver_list[:-1])
-        ctrl_version_with_build = ".".join(ver_list)
-    except (KeyboardInterrupt, IndexError, ValueError) as err:
-        raise AvxError("Could not decode version") from err
-    print("Parsed version sucessfully {} and {}".format(
-        ctrl_version, ctrl_version_with_build))
-    return ctrl_version, ctrl_version_with_build
-
-
-def get_initial_setup_status(ip_addr, cid):
-    """ Get status of the initial setup completion execution"""
-    print("Checking initial setup")
-    base_url = "https://" + ip_addr + "/v1/api"
-    post_data = {"CID": cid,
-                 "action": "initial_setup",
-                 "subaction": "check"}
-    try:
-        response = requests.post(base_url, data=post_data, verify=False)
-    except requests.exceptions.ConnectionError as err:
-        print(str(err))
-        return {'return': False, 'reason': str(err)}
-    return response.json()
-
-
-def run_initial_setup(ip_addr, cid, ctrl_version):
-    """ Boots the fresh controller to the specific version"""
-    response_json = get_initial_setup_status(ip_addr, cid)
-    if response_json.get('return') is True:
-        print("Initial setup is already done. Skipping")
-        return True
-    post_data = {"target_version": ctrl_version,
-                 "action": "initial_setup",
-                 "subaction": "run"}
-    print("Trying to run initial setup %s\n" % str(post_data))
-    post_data["CID"] = cid
-    base_url = "https://" + ip_addr + "/v1/api"
-    try:
-        response = requests.post(base_url, data=post_data, verify=False)
-    except requests.exceptions.ConnectionError as err:
-        if "Remote end closed connection without response" in str(err):
-            print("Server closed the connection while executing initial setup API."
-                  " Ignoring response")
-            response_json = {'return': True, 'reason': 'Warning!! Server closed the connection'}
-        else:
-            raise AvxError("Failed to execute initial setup: " + str(err)) from err
-    else:
-        response_json = response.json()
-        # Controllers running 6.4 and above would be unresponsive after initial_setup
-    print(response_json)
-    time.sleep(INITIAL_SETUP_API_WAIT)
-    if response_json.get('return') is True:
-        print("Successfully initialized the controller")
-    else:
-        raise AvxError("Could not bring up the new controller to the "
-                       "specific version")
-    return False
-
-
 def handle_login_failure(priv_ip,
                          client, lambda_client, controller_instanceobj, context,
                          eip):
@@ -655,117 +540,6 @@ def handle_login_failure(priv_ip,
         print("Successfully retrieved version. Previous restore operation had succeeded. "
               "Previous lambda may have exceeded 5 min. Updating lambda config")
         set_environ(client, lambda_client, controller_instanceobj, context, eip)
-
-
-def enable_t2_unlimited(client, inst_id):
-    """ Modify instance credit to unlimited for T2 """
-    print("Enabling T2 unlimited for %s" % inst_id)
-    try:
-        client.modify_instance_credit_specification(ClientToken=inst_id,
-                                                    InstanceCreditSpecifications=[{
-                                                        'InstanceId': inst_id,
-                                                        'CpuCredits': 'unlimited'}])
-    except botocore.exceptions.ClientError as err:
-        print(str(err))
-
-
-def get_role(role, default):
-    """ Get Role name from the environment """
-    name = os.environ.get(role)
-    if len(name) == 0:
-        return default
-    return name
-
-
-def create_cloud_account(cid, controller_ip, account_name):
-    """ Create a temporary account to restore the backup"""
-    print("Creating temporary account")
-    client = boto3.client('sts')
-    aws_acc_num = client.get_caller_identity()["Account"]
-    base_url = "https://%s/v1/api" % controller_ip
-    post_data = {
-        "action": "setup_account_profile",
-        "account_name": account_name,
-        "aws_account_number": aws_acc_num,
-        "aws_role_arn":
-            "arn:aws:iam::%s:role/%s" % (aws_acc_num,
-                                         get_role("AWS_ROLE_APP_NAME", "aviatrix-role-app")),
-        "aws_role_ec2":
-            "arn:aws:iam::%s:role/%s" % (aws_acc_num,
-                                         get_role("AWS_ROLE_EC2_NAME", "aviatrix-role-ec2")),
-        "cloud_type": 1,
-        "aws_iam": "true",
-        "skip_sg_config": "true"}
-    print("Trying to create account with data %s\n" % str(post_data))
-    post_data["CID"] = cid
-    try:
-        response = requests.post(base_url, data=post_data, verify=False)
-    except requests.exceptions.ConnectionError as err:
-        if "Remote end closed connection without response" in str(err):
-            print("Server closed the connection while executing create account API."
-                  " Ignoring response")
-            output = {"return": True, 'reason': 'Warning!! Server closed the connection'}
-            time.sleep(INITIAL_SETUP_DELAY)
-        else:
-            output = {"return": False, "reason": str(err)}
-    else:
-        output = response.json()
-
-    return output
-
-
-def restore_backup(cid, controller_ip, s3_file, account_name):
-    """ Restore backup from the s3 bucket"""
-    restore_data = {
-        "action": "restore_cloudx_config",
-        "cloud_type": "1",
-        "account_name": account_name,
-        "file_name": s3_file,
-        "bucket_name": os.environ.get('S3_BUCKET_BACK')}
-    print("Trying to restore config with data %s\n" % str(restore_data))
-    restore_data["CID"] = cid
-    base_url = "https://" + controller_ip + "/v1/api"
-    try:
-        response = requests.post(base_url, data=restore_data, verify=False)
-    except requests.exceptions.ConnectionError as err:
-        if "Remote end closed connection without response" in str(err):
-            print("Server closed the connection while executing restore_cloudx_config API."
-                  " Ignoring response")
-            response_json = {"return": True, 'reason': 'Warning!! Server closed the connection'}
-        else:
-            print(str(err))
-            response_json = {"return": False, "reason": str(err)}
-    else:
-        response_json = response.json()
-
-    return response_json
-
-
-def set_customer_id(cid, controller_api_ip):
-    """ Set the customer ID if set in environment to migrate to a different AMI type"""
-    print("Setting up Customer ID")
-    base_url = "https://" + controller_api_ip + "/v1/api"
-    post_data = {"CID": cid,
-                 "action": "setup_customer_id",
-                 "customer_id": os.environ.get("CUSTOMER_ID")}
-    try:
-        response = requests.post(base_url, data=post_data, verify=False)
-    except requests.exceptions.ConnectionError as err:
-        if "Remote end closed connection without response" in str(err):
-            print("Server closed the connection while executing setup_customer_id API."
-                  " Ignoring response")
-            response_json = {"return": True, 'reason': 'Warning!! Server closed the connection'}
-            time.sleep(WAIT_DELAY)
-        else:
-            response_json = {"return": False, "reason": str(err)}
-    else:
-        response_json = response.json()
-
-    if response_json.get('return') is True:
-        print("Customer ID successfully programmed")
-    else:
-        print("Customer ID programming failed. DB restore will fail: " +
-              response_json.get('reason', ""))
 
 
 def handle_ha_event(client, lambda_client, controller_instanceobj, context):
@@ -957,25 +731,6 @@ def assign_eip(client, controller_instanceobj, eip):
     else:
         print("Assigned/verified elastic IP")
         return True
-
-
-def validate_keypair(key_name):
-    """ Validates Keypairs"""
-    try:
-        client = boto3.client('ec2')
-        response = client.describe_key_pairs()
-    except botocore.exceptions.ClientError as err:
-        raise AvxError(str(err)) from err
-    key_aws_list = [key['KeyName'] for key in response['KeyPairs']]
-    if key_name not in key_aws_list:
-        print("Key does not exist. Creating")
-        try:
-            client = boto3.client('ec2')
-            client.create_key_pair(KeyName=key_name)
-        except botocore.exceptions.ClientError as err:
-            raise AvxError(str(err)) from err
-    else:
-        print("Key exists")
 
 
 def validate_subnets(subnet_list):
