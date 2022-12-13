@@ -15,11 +15,11 @@ from errors.exceptions import AvxError
 
 
 def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
-             attach_instance=True):
+             attach_instance=True, controller_instance_obj=None):
     """ Setup HA """
     print("HA config ami_id %s, inst_type %s, inst_id %s, key_name %s, sg_list %s, "
           "attach_instance %s" % (ami_id, inst_type, inst_id, key_name, sg_list, attach_instance))
-    lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
+    lt_name = lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
     # AMI_NAME = LC_NAME
     # ami_id = client.describe_images(
     #     Filters=[{'Name': 'name','Values':
@@ -58,6 +58,9 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     if not bld_map:
         print("bld map is empty")
         raise AvxError("Could not find any disks attached to the controller")
+    ec2_client = boto3.client('ec2')
+    iam_arn = os.environ.get('IAM_ARN')
+    monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
 
     if inst_id:
         print("Setting launch config from instance")
@@ -68,18 +71,51 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             BlockDeviceMappings=bld_map,
             UserData="# Ignore"
         )
+        bld_cp = []
+        for disk in bld_map:
+            bld_cp.append(disk(disk))
+            bld_cp[-1]['VolumeSize'] = bld_cp[-1].pop('Size')
 
         target_group_arns = get_target_group_arns(inst_id)
         if target_group_arns:
             update_env_dict(lambda_client, context,
                             {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
-        if is_controller_termination_protected(inst_id):
+        disable_api_term = is_controller_termination_protected(inst_id)
+        if disable_api_term:
             update_env_dict(lambda_client, context,
                             {'DISABLE_API_TERMINATION': "True"})
+        try:
+            ec2_client.create_launch_template(
+                LaunchTemplateName=lt_name,
+                LaunchTemplateData={
+                    # 'KernelId':  '',
+                    'EbsOptimized': controller_instance_obj.get('EbsOptimized', False),
+                    'IamInstanceProfile': iam_arn,
+                    'BlockDeviceMappings': bld_cp,
+                    'ImageId': ami_id,
+                    'InstanceType':  controller_instance_obj['InstanceType'],
+                    # 'NetworkInterfaces'
+                    'KeyName': key_name,
+                    'Monitoring': {"Enabled": monitoring},
+                    # Placement, (az info) # RamDiskId
+                    'DisableApiTermination': disable_api_term,
+                    # InstanceInitiatedShutdownBehavior,
+                    'UserData': "# Ignore",
+                    'TagSpecifications': [{'ResourceType': 'instance',
+                                           'Tags': os.environ.get('TAGS', '[]')}],
+                    'SecurityGroups': sg_list
+                    # ElasticGpuSpecifications # ElasticInferenceAccelerators # SecurityGroupIds
+                    # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
+                    # CreditSpecification # CpuOptions # CapacityReservationSpecification
+                    # LicenseSpecifications # HibernationOptions # MetadataOptions # EnclaveOptions
+                    # InstanceRequirements # PrivateDnsNameOptions # MaintenanceOptions
+                    # DisableApiStop
+                }
+            )
+        except Exception as err:
+            print(str(err))
     else:
         print("Setting launch config from environment")
-        iam_arn = os.environ.get('IAM_ARN')
-        monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
 
         kw_args = {
             "LaunchConfigurationName": lc_name,
@@ -99,6 +135,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             del kw_args["IamInstanceProfile"]
         if not bld_map:
             del kw_args["BlockDeviceMappings"]
+
         asg_client.create_launch_configuration(**kw_args)
 
         # check if target groups are still valid

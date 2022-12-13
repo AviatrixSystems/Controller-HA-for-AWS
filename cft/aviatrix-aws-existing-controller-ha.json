@@ -144,6 +144,8 @@
                         "ec2:DescribeNetworkInterfaces",
                         "ec2:DeleteNetworkInterface",
                         "ec2:ModifyInstanceAttribute",
+                        "ec2:CreateLaunchTemplate",
+                        "ec2:DeleteLaunchTemplate",
                         "lambda:UpdateFunctionConfiguration",
                         "lambda:GetFunction",
                         "lambda:GetFunctionConfiguration",
