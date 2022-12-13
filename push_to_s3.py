@@ -11,7 +11,7 @@ import boto3
 import zipfile
 from botocore.exceptions import ClientError
 
-from aviatrix_ha import DEV_FLAG
+from api.external.ami import DEV_FLAG
 
 try:
     ACCESS_KEY = os.environ['AWS_ACCESS_KEY_ID']
