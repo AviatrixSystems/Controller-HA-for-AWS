@@ -2,20 +2,17 @@
 # pylint: disable=too-many-lines,too-many-locals,too-many-branches,too-many-return-statements
 # pylint: disable=too-many-statements,too-many-arguments,broad-except
 import os
-import json
 import traceback
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 import boto3
 import version
-from handlers.asg.event import handle_ha_event
 from csp.lambda_c import update_env_dict
 from csp.sg import restore_security_group_access, create_new_sg
 from errors.exceptions import AvxError
 from csp.instance import get_controller_instance
-from handlers.cft.create import setup_ha
-from handlers.cft.delete import delete_resources
 from handlers.cft.handler import handle_cft
+from handlers.asg.handler import handle_sns_event
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -82,37 +79,8 @@ def _lambda_handler(event, context):
         handle_cft(describe_err, event, context, client, lambda_client, controller_instanceobj,
                    instance_name)
     elif sns_event:
-        if describe_err:
-            try:
-                sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))['Event']
-                print(sns_msg_event)
-            except (KeyError, IndexError, ValueError) as err:
-                raise AvxError("1.Could not parse SNS message %s" % str(err)) from err
-            if not sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
-                print("Not from launch error. Exiting")
-                return
-            print("From the instance launch error. Will attempt to re-create Auto scaling group")
-        try:
-            sns_msg_json = json.loads(event["Records"][0]["Sns"]["Message"])
-            sns_msg_event = sns_msg_json['Event']
-            sns_msg_desc = sns_msg_json.get('Description', "")
-        except (KeyError, IndexError, ValueError) as err:
-            raise AvxError("2. Could not parse SNS message %s" % str(err)) from err
-        print("SNS Event %s Description %s " % (sns_msg_event, sns_msg_desc))
-        if sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH":
-            print("Instance launched from Autoscaling")
-            handle_ha_event(client, lambda_client, controller_instanceobj, context)
-        elif sns_msg_event == "autoscaling:TEST_NOTIFICATION":
-            print("Successfully received Test Event from ASG")
-        elif sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
-            # and "The security group" in sns_msg_desc and "does not exist in VPC" in sns_msg_desc:
-            print("Instance launch error, recreating with new security group configuration")
-            sg_id = create_new_sg(client)
-            ami_id = os.environ.get('AMI_ID')
-            inst_type = os.environ.get('INST_TYPE')
-            key_name = os.environ.get('KEY_NAME')
-            delete_resources(None, detach_instances=False)
-            setup_ha(ami_id, inst_type, None, key_name, [sg_id], context, attach_instance=False)
+        handle_sns_event(describe_err, event, client, lambda_client, controller_instanceobj,
+                         context)
     else:
         print("Unknown source. Not from CFT or SNS")
 
