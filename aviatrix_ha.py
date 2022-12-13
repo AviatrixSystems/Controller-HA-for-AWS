@@ -83,5 +83,3 @@ def _lambda_handler(event, context):
                          context)
     else:
         print("Unknown source. Not from CFT or SNS")
-
-
