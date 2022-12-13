@@ -11,6 +11,7 @@ import boto3
 import zipfile
 from botocore.exceptions import ClientError
 
+sys.path.append("../src")
 from api.external.ami import DEV_FLAG
 
 try:
@@ -22,12 +23,12 @@ except KeyError as err:
                     " python push_to_s3.py. For dev add --dev") from err
 
 BUCKET_PREFIX = "aviatrix-lambda-"
-LAMBDA_ZIP_FILE = 'aviatrix_ha.zip'
-LAMBDA_ZIP_DEV_FILE = 'aviatrix_ha_dev.zip'
+LAMBDA_ZIP_FILE = '../bin/aviatrix_ha.zip'
+LAMBDA_ZIP_DEV_FILE_STR = 'aviatrix_ha_dev.zip'
 
 CFT_BUCKET_NAME = "aviatrix-cloudformation-templates"
 CFT_BUCKET_REGION = "us-west-2"
-CFT_FILE_NAME = "aviatrix-aws-existing-controller-ha.json"
+CFT_FILE_NAME = "../cft/aviatrix-aws-existing-controller-ha.json"
 CFT_DEV_FILE_NAME = "aviatrix-aws-existing-controller-ha-dev.json"
 
 
@@ -36,7 +37,7 @@ def push_cft_s3():
     print(" Pushing CFT")
     s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
                        region_name=CFT_BUCKET_REGION, aws_session_token=SESSION_TOKEN)
-    dst_file = CFT_FILE_NAME
+    dst_file = os.path.basename(CFT_FILE_NAME)
     dev = False
     try:
         if sys.argv[1] == "--dev":
@@ -44,8 +45,8 @@ def push_cft_s3():
             dev = True
             dst_file = CFT_DEV_FILE_NAME
             with open(CFT_FILE_NAME) as fileh:
-                if LAMBDA_ZIP_DEV_FILE not in fileh.read():
-                    raise Exception(LAMBDA_ZIP_DEV_FILE + " not found in lambda in CFT")
+                if LAMBDA_ZIP_DEV_FILE_STR not in fileh.read():
+                    raise Exception(LAMBDA_ZIP_DEV_FILE_STR + " not found in lambda in CFT")
             with zipfile.ZipFile(LAMBDA_ZIP_FILE, 'r', zipfile.ZIP_DEFLATED) \
                     as zip_file:
                 if DEV_FLAG not in zip_file.namelist():
@@ -56,8 +57,8 @@ def push_cft_s3():
         pass
     if not dev:
         with open(CFT_FILE_NAME) as fileh:
-            if LAMBDA_ZIP_DEV_FILE in fileh.read():
-                raise Exception(LAMBDA_ZIP_DEV_FILE + " found in lambda in CFT. Not pushing")
+            if LAMBDA_ZIP_DEV_FILE_STR in fileh.read():
+                raise Exception(LAMBDA_ZIP_DEV_FILE_STR + " found in lambda in CFT. Not pushing")
         with zipfile.ZipFile(LAMBDA_ZIP_FILE, 'r', zipfile.ZIP_DEFLATED) \
                 as zip_file:
             if DEV_FLAG in zip_file.namelist():
@@ -109,11 +110,11 @@ def push_lambda_file_in_region(region):
     #     else:
     #         print(traceback.format_exc())
 
-    dst_file = LAMBDA_ZIP_FILE
+    dst_file = os.path.basename(LAMBDA_ZIP_FILE)
     try:
         if sys.argv[1] == "--dev":
             print("Pushing to dev bucket")
-            dst_file = LAMBDA_ZIP_DEV_FILE
+            dst_file = LAMBDA_ZIP_DEV_FILE_STR
     except IndexError:
         pass
 
