@@ -11,7 +11,6 @@ from urllib.request import build_opener, HTTPHandler, Request
 import traceback
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
-import requests
 import boto3
 import botocore
 import version
@@ -21,18 +20,20 @@ from api.cust import set_customer_id
 from api.initial_setup import get_initial_setup_status, run_initial_setup
 from api.login import login_to_controller
 from api.restore import restore_backup
+from api.upgrade_to_build import is_upgrade_to_build_supported
 from common.constants import HANDLE_HA_TIMEOUT, WAIT_DELAY, INITIAL_SETUP_DELAY
+from csp.eip import assign_eip
 from csp.keypair import validate_keypair
-from csp.lambda_c import wait_function_update_successful
-from csp.s3 import retrieve_controller_version
-from csp.sg import restore_security_group_access, temp_add_security_group_access
+from csp.lambda_c import set_environ, update_env_dict
+from csp.s3 import retrieve_controller_version, verify_bucket, MAXIMUM_BACKUP_AGE, \
+    verify_backup_file, is_backup_file_is_recent
+from csp.sg import restore_security_group_access, temp_add_security_group_access, create_new_sg
+from csp.target_group import get_target_group_arns
 from errors.exceptions import AvxError
-from csp.instance import get_controller_instance, enable_t2_unlimited
+from csp.instance import get_controller_instance, enable_t2_unlimited, \
+    is_controller_termination_protected
 
 urllib3.disable_warnings(InsecureRequestWarning)
-
-MAXIMUM_BACKUP_AGE = 24 * 3600 * 3  # 3 days
-AWS_US_EAST_REGION = 'us-east-1'
 
 print('Loading function')
 
@@ -161,27 +162,6 @@ def _lambda_handler(event, context):
         print("Unknown source. Not from CFT or SNS")
 
 
-def get_target_group_arns(inst_id):
-    """ Get target group arns the running ec2 instance is registered to. """
-    elb_client = boto3.client('elbv2')
-    target_groups = elb_client.describe_target_groups().get('TargetGroups', [])
-    target_group_arns = []
-    for tg_ in target_groups:
-        try:
-            target_health = elb_client.describe_target_health(
-                TargetGroupArn=tg_.get('TargetGroupArn', '')).get(
-                    'TargetHealthDescriptions', [])
-            for registered_target in target_health:
-                if registered_target.get('Target', {}).get('Id', '') == inst_id:
-                    target_group_arns.append(tg_['TargetGroupArn'])
-                    break
-        except (botocore.exceptions.ClientError,
-                elb_client.exceptions.TargetGroupNotFoundException) as err:
-            print(str(err))
-    print(f"target_group_arns is {target_group_arns}")
-    return target_group_arns
-
-
 def handle_cloud_formation_request(client, event, lambda_client, controller_instanceobj, context,
                                    instance_name):
     """Handle Requests from cloud formation"""
@@ -246,159 +226,6 @@ def handle_cloud_formation_request(client, event, lambda_client, controller_inst
     return response_status, err_reason
 
 
-def create_new_sg(client):
-    """ Creates a new security group"""
-    instance_name = os.environ.get('AVIATRIX_TAG')
-    vpc_id = os.environ.get('VPC_ID')
-    try:
-        resp = client.create_security_group(Description='Aviatrix Controller',
-                                            GroupName=instance_name,
-                                            VpcId=vpc_id)
-        sg_id = resp['GroupId']
-    except (botocore.exceptions.ClientError, KeyError) as err:
-        if "InvalidGroup.Duplicate" in str(err):
-            rsp = client.describe_security_groups(GroupNames=[instance_name])
-            sg_id = rsp['SecurityGroups'][0]['GroupId']
-        else:
-            raise AvxError(str(err)) from err
-    try:
-        client.authorize_security_group_ingress(
-            GroupId=sg_id,
-            IpPermissions=[
-                {'IpProtocol': 'tcp',
-                 'FromPort': 443,
-                 'ToPort': 443,
-                 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
-                {'IpProtocol': 'tcp',
-                 'FromPort': 80,
-                 'ToPort': 80,
-                 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
-            ])
-    except botocore.exceptions.ClientError as err:
-        if "InvalidGroup.Duplicate" in str(err) or "InvalidPermission.Duplicate" in str(err):
-            pass
-        else:
-            raise AvxError(str(err)) from err
-    return sg_id
-
-
-def update_env_dict(lambda_client, context, replace_dict):
-    """ Update particular variables in the Environment variables in lambda"""
-    env_dict = {
-        'EIP': os.environ.get('EIP'),
-        'AMI_ID': os.environ.get('AMI_ID'),
-        'VPC_ID': os.environ.get('VPC_ID'),
-        'INST_TYPE': os.environ.get('INST_TYPE'),
-        'KEY_NAME': os.environ.get('KEY_NAME'),
-        'CTRL_SUBNET': os.environ.get('CTRL_SUBNET'),
-        'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS', "False"),
-        'PRIV_IP': os.environ.get('PRIV_IP'),
-        'INST_ID': os.environ.get('INST_ID'),
-        'SUBNETLIST': os.environ.get('SUBNETLIST'),
-        'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
-        'S3_BUCKET_REGION': os.environ.get('S3_BUCKET_REGION', ''),
-        'TOPIC_ARN': os.environ.get('TOPIC_ARN'),
-        'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
-        'IAM_ARN': os.environ.get('IAM_ARN'),
-        'MONITORING': os.environ.get('IAM_ARN'),
-        'DISKS': os.environ.get('DISKS'),
-        'TAGS': os.environ.get('TAGS', '[]'),
-        'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
-        'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
-        'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
-        'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
-        'DISABLE_API_TERMINATION': os.environ.get('DISABLE_API_TERMINATION', "False"),
-        # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
-        # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
-    }
-    env_dict.update(replace_dict)
-    os.environ.update(replace_dict)
-
-    wait_function_update_successful(lambda_client, context.function_name)
-    lambda_client.update_function_configuration(FunctionName=context.function_name,
-                                                Environment={'Variables': env_dict})
-    print("Updated environment dictionary")
-
-
-def set_environ(client, lambda_client, controller_instanceobj, context,
-                eip=None):
-    """ Sets Environment variables """
-    if eip is None:
-        # From cloud formation. EIP is not known at this point. So get from controller inst
-        eip = controller_instanceobj[
-            'NetworkInterfaces'][0]['Association'].get('PublicIp')
-    else:
-        eip = os.environ.get('EIP')
-    sns_topic_arn = os.environ.get('TOPIC_ARN')
-    inst_id = controller_instanceobj['InstanceId']
-    ami_id = controller_instanceobj['ImageId']
-    vpc_id = controller_instanceobj['VpcId']
-    inst_type = controller_instanceobj['InstanceType']
-    keyname = controller_instanceobj.get('KeyName', '')
-    ctrl_subnet = controller_instanceobj['SubnetId']
-    priv_ip = controller_instanceobj.get('NetworkInterfaces')[0].get('PrivateIpAddress')
-    iam_arn = controller_instanceobj.get('IamInstanceProfile', {}).get('Arn', '')
-    mon_bool = controller_instanceobj.get('Monitoring', {}).get('State', 'disabled') != 'disabled'
-    monitoring = 'enabled' if mon_bool else 'disabled'
-    tags = controller_instanceobj.get("Tags", [])
-    tags_stripped = []
-    for tag in tags:
-        key = tag.get("Key", "")
-        # Tags starting with aws: is reserved
-        if not key.startswith("aws:"):
-            tags_stripped.append(tag)
-
-    disks = []
-    for volume in controller_instanceobj.get('BlockDeviceMappings', {}):
-        ebs = volume.get('Ebs', {})
-        if ebs.get('Status', 'detached') == 'attached':
-            vol_id = ebs.get('VolumeId')
-            vol = client.describe_volumes(VolumeIds=[vol_id])['Volumes'][0]
-            disks.append({"VolumeId": vol_id,
-                          "DeleteOnTermination": ebs.get('DeleteOnTermination'),
-                          "VolumeType": vol["VolumeType"],
-                          "Size": vol["Size"],
-                          "Iops": vol.get("Iops", ""),
-                          "Encrypted": vol["Encrypted"],
-                          })
-
-    env_dict = {
-        'EIP': eip,
-        'AMI_ID': ami_id,
-        'VPC_ID': vpc_id,
-        'INST_TYPE': inst_type,
-        'KEY_NAME': keyname,
-        'CTRL_SUBNET': ctrl_subnet,
-        'AVIATRIX_TAG': os.environ.get('AVIATRIX_TAG'),
-        'API_PRIVATE_ACCESS': os.environ.get('API_PRIVATE_ACCESS', "False"),
-        'PRIV_IP': priv_ip,
-        'INST_ID': inst_id,
-        'SUBNETLIST': os.environ.get('SUBNETLIST'),
-        'S3_BUCKET_BACK': os.environ.get('S3_BUCKET_BACK'),
-        'S3_BUCKET_REGION': os.environ.get('S3_BUCKET_REGION', ''),
-        'TOPIC_ARN': sns_topic_arn,
-        'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
-        'IAM_ARN': iam_arn,
-        'MONITORING': monitoring,
-        'DISKS': json.dumps(disks),
-        'TAGS': json.dumps(tags_stripped),
-        'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
-        'AWS_ROLE_APP_NAME': os.environ.get('AWS_ROLE_APP_NAME'),
-        'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
-        'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
-        'DISABLE_API_TERMINATION': os.environ.get('DISABLE_API_TERMINATION', "False"),
-        # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
-        # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
-    }
-    print("Setting environment %s" % env_dict)
-
-    wait_function_update_successful(lambda_client, context.function_name)
-    lambda_client.update_function_configuration(FunctionName=context.function_name,
-                                                Environment={'Variables': env_dict})
-    os.environ.update(env_dict)
-
-
 def verify_iam(controller_instanceobj):
     """ Verify IAM roles"""
     print("Verifying IAM roles ")
@@ -406,119 +233,6 @@ def verify_iam(controller_instanceobj):
     if not iam_arn:
         return False
     return True
-
-
-def verify_bucket(controller_instanceobj):
-    """ Verify S3 and controller account credentials """
-    print("Verifying bucket")
-    try:
-        s3_client = boto3.client('s3')
-        resp = s3_client.get_bucket_location(Bucket=os.environ.get('S3_BUCKET_BACK'))
-    except Exception as err:
-        print("S3 bucket used for backup is not "
-              "valid. %s" % str(err))
-        return False, ""
-    try:
-        bucket_region = resp['LocationConstraint']
-
-        # Buckets in Region us-east-1 have a LocationConstraint of null
-        if bucket_region is None:
-            print(f"Bucket region is None. Setting to {AWS_US_EAST_REGION}")
-            bucket_region = AWS_US_EAST_REGION
-    except KeyError:
-        print("Key LocationConstraint not found in get_bucket_location response %s" % resp)
-        return False, ""
-
-    print("S3 bucket is valid.")
-    eip = controller_instanceobj[
-        'NetworkInterfaces'][0]['Association'].get('PublicIp')
-    print(eip)
-
-    # login_to_controller(eip, os.environ.get('AVIATRIX_USER_BACK'),
-    #                     os.environ.get('AVIATRIX_PASS_BACK'))
-    return True, bucket_region
-
-
-def is_backup_file_is_recent(backup_file):
-    """ Check if backup file is not older than MAXIMUM_BACKUP_AGE """
-    try:
-        s3c = boto3.client('s3', region_name=os.environ['S3_BUCKET_REGION'])
-        try:
-            file_obj = s3c.get_object(Key=backup_file, Bucket=os.environ.get('S3_BUCKET_BACK'))
-        except botocore.exceptions.ClientError as err:
-            print(str(err))
-            return False
-        age = time.time() - file_obj['LastModified'].timestamp()
-        if age < MAXIMUM_BACKUP_AGE:
-            print("Succesfully validated Backup file age")
-            return True
-        print(f"File age {age} is older than the maximum allowed value of {MAXIMUM_BACKUP_AGE}")
-        return False
-    except Exception as err:
-        print(f"Checking backup file age failed due to {str(err)}")
-        return False
-
-
-def verify_backup_file(controller_instanceobj):
-    """ Verify if s3 file exists"""
-    print("Verifying Backup file")
-    try:
-        s3c = boto3.client('s3', region_name=os.environ['S3_BUCKET_REGION'])
-        priv_ip = controller_instanceobj['NetworkInterfaces'][0]['PrivateIpAddress']
-        version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
-        retrieve_controller_version(version_file)
-        s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
-        try:
-            with open('/tmp/tmp.enc', 'wb') as data:
-                s3c.download_fileobj(os.environ.get('S3_BUCKET_BACK'), s3_file, data)
-        except botocore.exceptions.ClientError as err:
-            if err.response['Error']['Code'] == "404":
-                print("The object %s does not exist." % s3_file)
-                return False, ""
-            print(str(err))
-            return False, ""
-    except Exception as err:
-        print("Verify Backup failed %s" % str(err))
-        return False, ""
-    else:
-        return True, s3_file
-
-
-def is_upgrade_to_build_supported(ip_addr, cid):
-    """ Check if the version supports upgrade to build """
-    print("Checking if upgrade to build is suppported")
-    base_url = "https://" + ip_addr + "/v1/api"
-    post_data = {"CID": cid,
-                 "action": "get_feature_info"}
-    try:
-        response = requests.post(base_url, data=post_data, verify=False)
-        print(response.content)
-        response_json = json.loads(response.content)
-        if response_json.get("return") is True and \
-                response_json.get("results", {}) \
-                .get("allow_build_upgrade") is True:
-            print("Upgrade to build is supported")
-            return True
-    except requests.exceptions.ConnectionError as err:
-        print(str(err))
-    except (ValueError, TypeError):
-        print("json decode failed: {}".format(response.content))
-    print("Upgrade to build is not supported")
-    return False
-
-
-def is_controller_termination_protected(inst_id):
-    """ Check if the controller instance has API termination protection """
-    try:
-        enabled = boto3.client('ec2').describe_instance_attribute(
-            Attribute='disableApiTermination',
-            InstanceId=inst_id)['DisableApiTermination']['Value']
-        print("Controller termination protection is {}enabled".format(
-            "" if enabled else "not "))
-        return enabled
-    except Exception as err:
-        print(str(err))
-    return False
 
 
 def handle_login_failure(priv_ip,
@@ -708,29 +422,6 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             print("Reverting sg %s" % sg_modified)
             update_env_dict(lambda_client, context, {'TMP_SG_GRP': ''})
             restore_security_group_access(client, sg_modified)
-
-
-def assign_eip(client, controller_instanceobj, eip):
-    """ Assign the EIP to the new instance"""
-    cf_req = False
-    try:
-        if eip is None:
-            cf_req = True
-            eip = controller_instanceobj['NetworkInterfaces'][0]['Association'].get('PublicIp')
-        eip_alloc_id = client.describe_addresses(
-            PublicIps=[eip]).get('Addresses')[0].get('AllocationId')
-        client.associate_address(AllocationId=eip_alloc_id,
-                                 InstanceId=controller_instanceobj['InstanceId'])
-    except Exception as err:
-        if cf_req and "InvalidAddress.NotFound" in str(err):
-            print("EIP %s was not found. Please attach an EIP to the controller before enabling HA"
-                  % eip)
-            return False
-        print("Failed in assigning EIP %s" % str(err))
-        return False
-    else:
-        print("Assigned/verified elastic IP")
-        return True
 
 
 def validate_subnets(subnet_list):

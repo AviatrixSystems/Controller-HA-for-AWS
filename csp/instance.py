@@ -1,4 +1,5 @@
 """ CSP APis related to instances"""
+import boto3
 import botocore
 
 
@@ -39,3 +40,17 @@ def enable_t2_unlimited(client, inst_id):
                                                         'CpuCredits': 'unlimited'}])
     except botocore.exceptions.ClientError as err:
         print(str(err))
+
+
+def is_controller_termination_protected(inst_id):
+    """ Check if the controller instance has API termination protection """
+    try:
+        enabled = boto3.client('ec2').describe_instance_attribute(
+            Attribute='disableApiTermination',
+            InstanceId=inst_id)['DisableApiTermination']['Value']
+        print("Controller termination protection is {}enabled".format(
+            "" if enabled else "not "))
+        return enabled
+    except Exception as err:
+        print(str(err))
+    return False
