@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import traceback
 import uuid
 
 import boto3
@@ -35,6 +36,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     try:
         tags = json.loads(os.environ.get('TAGS'))
     except ValueError:
+        print('Setting tags based on Name')
         tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
     else:
         if not tags:
@@ -53,6 +55,9 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                            'DeviceName': '/dev/sda1'}
             if not disk_config["Ebs"]["Iops"]:
                 del disk_config["Ebs"]["Iops"]
+            if disk_config["Ebs"]['VolumeType'] not in ["gp3", "io1", "io2"]:
+                # IOPs can only be specified for the above types. For the others, it is read-only
+                del disk_config["Ebs"]["Iops"]
             bld_map.append(disk_config)
     print("Block device configuration", bld_map)
     if not bld_map:
@@ -64,17 +69,13 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
 
     if inst_id:
         print("Setting launch config from instance")
-        asg_client.create_launch_configuration(
-            LaunchConfigurationName=lc_name,
-            ImageId=ami_id,
-            InstanceId=inst_id,
-            BlockDeviceMappings=bld_map,
-            UserData="# Ignore"
-        )
-        bld_cp = []
-        for disk in bld_map:
-            bld_cp.append(disk(disk))
-            bld_cp[-1]['VolumeSize'] = bld_cp[-1].pop('Size')
+        # asg_client.create_launch_configuration(
+        #     LaunchConfigurationName=lc_name,
+        #     ImageId=ami_id,
+        #     InstanceId=inst_id,
+        #     BlockDeviceMappings=bld_map,
+        #     UserData="# Ignore"
+        # )
 
         target_group_arns = get_target_group_arns(inst_id)
         if target_group_arns:
@@ -84,14 +85,18 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         if disable_api_term:
             update_env_dict(lambda_client, context,
                             {'DISABLE_API_TERMINATION': "True"})
+        tag_cp = []
+        for tag in tags:
+            tag_cp.append(dict(tag))
+            tag_cp[-1].pop('PropagateAtLaunch', None)
         try:
             ec2_client.create_launch_template(
                 LaunchTemplateName=lt_name,
                 LaunchTemplateData={
                     # 'KernelId':  '',
                     'EbsOptimized': controller_instance_obj.get('EbsOptimized', False),
-                    'IamInstanceProfile': iam_arn,
-                    'BlockDeviceMappings': bld_cp,
+                    'IamInstanceProfile': {'Arn': iam_arn},
+                    'BlockDeviceMappings': bld_map,
                     'ImageId': ami_id,
                     'InstanceType':  controller_instance_obj['InstanceType'],
                     # 'NetworkInterfaces'
@@ -100,10 +105,11 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                     # Placement, (az info) # RamDiskId
                     'DisableApiTermination': disable_api_term,
                     # InstanceInitiatedShutdownBehavior,
-                    'UserData': "# Ignore",
+                    # 'UserData': "'IyBJZ25vcmU='",# base64.b64encode("# Ignore".encode()).decode()
                     'TagSpecifications': [{'ResourceType': 'instance',
-                                           'Tags': os.environ.get('TAGS', '[]')}],
-                    'SecurityGroups': sg_list
+                                           'Tags': tag_cp}],
+                    # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
+                    'SecurityGroupIds': sg_list,
                     # ElasticGpuSpecifications # ElasticInferenceAccelerators # SecurityGroupIds
                     # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
                     # CreditSpecification # CpuOptions # CapacityReservationSpecification
@@ -112,8 +118,8 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                     # DisableApiStop
                 }
             )
-        except Exception as err:
-            print(str(err))
+        except Exception:
+            print(traceback.format_exc())
     else:
         print("Setting launch config from environment")
 
@@ -160,7 +166,8 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             print("Trying to create ASG")
             asg_client.create_auto_scaling_group(
                 AutoScalingGroupName=asg_name,
-                LaunchConfigurationName=lc_name,
+                # LaunchConfigurationName=lc_name,
+                LaunchTemplate={'LaunchTemplateName': lt_name},
                 MinSize=0,
                 MaxSize=1,
                 DesiredCapacity=0 if attach_instance else 1,
