@@ -61,6 +61,7 @@ def _handle_cloud_formation_request(client, event, lambda_client, controller_ins
             print("Environment variables have been set.")
         except Exception as err:
             err_reason = "Failed to setup environment variables %s" % str(err)
+            print(traceback.format_exc())
             print(err_reason)
             return 'FAILED', err_reason
 
@@ -86,23 +87,20 @@ def _handle_cloud_formation_request(client, event, lambda_client, controller_ins
 
         print("Verified AWS and controller Credentials and backup file, EIP and AMI ID")
         print("Trying to setup HA")
-        try:
-            ami_id = controller_instanceobj['ImageId']
-            inst_id = controller_instanceobj['InstanceId']
-            inst_type = controller_instanceobj['InstanceType']
-            key_name = controller_instanceobj.get('KeyName', '')
-            sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
-            setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
-        except Exception as err:
-            response_status = 'FAILED'
-            err_reason = "Failed to setup HA. %s" % str(err)
-            print(err_reason)
+        ami_id = controller_instanceobj['ImageId']
+        inst_id = controller_instanceobj['InstanceId']
+        inst_type = controller_instanceobj['InstanceType']
+        key_name = controller_instanceobj.get('KeyName', '')
+        sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
+        setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
+
     elif event['RequestType'] == 'Delete':
         try:
             print("Trying to delete lambda created resources")
             inst_id = controller_instanceobj['InstanceId']
             delete_resources(inst_id)
         except Exception as err:
+            print(traceback.format_exc())
             err_reason = "Failed to delete lambda created resources. %s" % str(err)
             print(err_reason)
             print("You'll have to manually delete Auto Scaling group,"

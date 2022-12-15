@@ -8,7 +8,7 @@ from errors.exceptions import AvxError
 
 def delete_resources(inst_id, delete_sns=True, detach_instances=True):
     """ Cloud formation cleanup"""
-    lc_name = asg_name = os.environ.get('AVIATRIX_TAG')
+    lt_name = lc_name = asg_name = os.environ.get('AVIATRIX_TAG')
 
     asg_client = boto3.client('autoscaling')
     if detach_instances:
@@ -25,6 +25,11 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
             print("Controller instance detached from autoscaling group")
         except botocore.exceptions.ClientError as err:
             print(str(err))
+    try:
+        boto3.client('ec2').delete_launch_template(LaunchTemplateName=lt_name)
+    except botocore.exceptions.ClientError as err:
+        print(str(err))
+
     try:
         asg_client.delete_auto_scaling_group(AutoScalingGroupName=asg_name,
                                              ForceDelete=True)
