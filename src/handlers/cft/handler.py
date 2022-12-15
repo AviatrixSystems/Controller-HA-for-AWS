@@ -68,7 +68,7 @@ def _handle_cloud_formation_request(client, event, lambda_client, controller_ins
         if not verify_iam(controller_instanceobj):
             return 'FAILED', 'IAM role aviatrix-role-ec2 could not be verified to be attached to' \
                              ' controller'
-        bucket_status, bucket_region = verify_bucket(controller_instanceobj)
+        bucket_status, bucket_region = verify_bucket()
         os.environ['S3_BUCKET_REGION'] = bucket_region
         update_env_dict(lambda_client, context, {"S3_BUCKET_REGION": bucket_region})
         if not bucket_status:
@@ -78,7 +78,8 @@ def _handle_cloud_formation_request(client, event, lambda_client, controller_ins
             return 'FAILED', 'Cannot find backup file in the bucket'
         if not is_backup_file_is_recent(backup_file):
             return 'FAILED', f'Backup file is older than {MAXIMUM_BACKUP_AGE}'
-        if not assign_eip(client, controller_instanceobj, None):
+        if not assign_eip(client, controller_instanceobj, None) and not \
+                os.environ.get('API_PRIVATE_ACCESS', "False") == 'True':
             return 'FAILED', 'Failed to associate EIP or EIP was not found.' \
                              ' Please attach an EIP to the controller before enabling HA'
         if not check_ami_id(controller_instanceobj['ImageId']):

@@ -24,10 +24,21 @@ def wait_function_update_successful(lambda_client, function_name,
 def set_environ(client, lambda_client, controller_instanceobj, context,
                 eip=None):
     """ Sets Environment variables """
+    use_eip = 'True'
     if eip is None:
         # From cloud formation. EIP is not known at this point. So get from controller inst
-        eip = controller_instanceobj[
-            'NetworkInterfaces'][0]['Association'].get('PublicIp')
+        eni = controller_instanceobj['NetworkInterfaces'][0]
+        try:
+            eip = eni['Association'].get('PublicIp')
+        except KeyError:
+            if os.environ.get('API_PRIVATE_ACCESS', "False") == 'True':
+                use_eip = 'False'
+                eip = ''
+                print('Skipping EIP for Private Mode')
+            else:
+                print('Could not get public IP while setting env')
+                raise AvxError("A public IP/EIP was not found. An Elastic IP Address is required"
+                               "for controller HA to function correctly in public mode")
     else:
         eip = os.environ.get('EIP')
     sns_topic_arn = os.environ.get('TOPIC_ARN')
@@ -66,6 +77,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
 
     env_dict = {
         'EIP': eip,
+        'USE_EIP': use_eip,
         'AMI_ID': ami_id,
         'VPC_ID': vpc_id,
         'INST_TYPE': inst_type,
@@ -105,6 +117,7 @@ def update_env_dict(lambda_client, context, replace_dict):
     """ Update particular variables in the Environment variables in lambda"""
     env_dict = {
         'EIP': os.environ.get('EIP'),
+        'USE_EIP': os.environ.get('USE_EIP'),
         'AMI_ID': os.environ.get('AMI_ID'),
         'VPC_ID': os.environ.get('VPC_ID'),
         'INST_TYPE': os.environ.get('INST_TYPE'),

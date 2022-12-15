@@ -44,7 +44,7 @@ def retrieve_controller_version(version_file):
     return ctrl_version, ctrl_version_with_build
 
 
-def verify_bucket(controller_instanceobj):
+def verify_bucket():
     """ Verify S3 and controller account credentials """
     print("Verifying bucket")
     try:
@@ -64,14 +64,6 @@ def verify_bucket(controller_instanceobj):
     except KeyError:
         print("Key LocationConstraint not found in get_bucket_location response %s" % resp)
         return False, ""
-
-    print("S3 bucket is valid.")
-    eip = controller_instanceobj[
-        'NetworkInterfaces'][0]['Association'].get('PublicIp')
-    print(eip)
-
-    # login_to_controller(eip, os.environ.get('AVIATRIX_USER_BACK'),
-    #                     os.environ.get('AVIATRIX_PASS_BACK'))
     return True, bucket_region
 
 
