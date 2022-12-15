@@ -37,12 +37,10 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         tags = json.loads(os.environ.get('TAGS'))
     except ValueError:
         print('Setting tags based on Name')
-        tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+        tags = [{'Key': 'Name', 'Value': asg_name}]
     else:
         if not tags:
-            tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
-        for tag in tags:
-            tag['PropagateAtLaunch'] = True
+            tags = [{'Key': 'Name', 'Value': asg_name}]
 
     disks = json.loads(os.environ.get('DISKS'))
     if disks:
@@ -68,14 +66,10 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
 
     if inst_id:
-        print("Setting launch config from instance")
-        asg_client.create_launch_configuration(
-            LaunchConfigurationName=lc_name,
-            ImageId=ami_id,
-            InstanceId=inst_id,
-            BlockDeviceMappings=bld_map,
-            UserData="# Ignore"
-        )
+        print("Setting launch template from instance")
+        # asg_client.create_launch_configuration(
+        #     LaunchConfigurationName=lc_name, ImageId=ami_id,  InstanceId=inst_id,
+        #     BlockDeviceMappings=bld_map, UserData="# Ignore")
 
         target_group_arns = get_target_group_arns(inst_id)
         if target_group_arns:
@@ -85,10 +79,6 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         if disable_api_term:
             update_env_dict(lambda_client, context,
                             {'DISABLE_API_TERMINATION': "True"})
-        tag_cp = []
-        for tag in tags:
-            tag_cp.append(dict(tag))
-            tag_cp[-1].pop('PropagateAtLaunch', None)
         try:
             ec2_client.create_launch_template(
                 LaunchTemplateName=lt_name,
@@ -98,7 +88,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                     'IamInstanceProfile': {'Arn': iam_arn},
                     'BlockDeviceMappings': bld_map,
                     'ImageId': ami_id,
-                    'InstanceType':  controller_instance_obj['InstanceType'],
+                    'InstanceType':  inst_type,
                     # 'NetworkInterfaces'
                     'KeyName': key_name,
                     'Monitoring': {"Enabled": monitoring},
@@ -107,7 +97,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                     # InstanceInitiatedShutdownBehavior,
                     # 'UserData': "'IyBJZ25vcmU='",# base64.b64encode("# Ignore".encode()).decode()
                     'TagSpecifications': [{'ResourceType': 'instance',
-                                           'Tags': tag_cp}],
+                                           'Tags': tags}],
                     # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
                     'SecurityGroupIds': sg_list,
                     # ElasticGpuSpecifications # ElasticInferenceAccelerators
