@@ -42,6 +42,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
     mon_bool = controller_instanceobj.get('Monitoring', {}).get('State', 'disabled') != 'disabled'
     monitoring = 'enabled' if mon_bool else 'disabled'
     tags = controller_instanceobj.get("Tags", [])
+    ebs_opt = str(bool(controller_instanceobj.get('EbsOptimized', False)))
     tags_stripped = []
     for tag in tags:
         key = tag.get("Key", "")
@@ -88,6 +89,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
         'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
         'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
         'DISABLE_API_TERMINATION': os.environ.get('DISABLE_API_TERMINATION', "False"),
+        'EBS_OPT': ebs_opt,
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -118,7 +120,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'TOPIC_ARN': os.environ.get('TOPIC_ARN'),
         'NOTIF_EMAIL': os.environ.get('NOTIF_EMAIL'),
         'IAM_ARN': os.environ.get('IAM_ARN'),
-        'MONITORING': os.environ.get('IAM_ARN'),
+        'MONITORING': os.environ.get('MONITORING'),
         'DISKS': os.environ.get('DISKS'),
         'TAGS': os.environ.get('TAGS', '[]'),
         'TMP_SG_GRP': os.environ.get('TMP_SG_GRP', ''),
@@ -126,6 +128,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         'AWS_ROLE_EC2_NAME': os.environ.get('AWS_ROLE_EC2_NAME'),
         'TARGET_GROUP_ARNS': os.environ.get('TARGET_GROUP_ARNS', '[]'),
         'DISABLE_API_TERMINATION': os.environ.get('DISABLE_API_TERMINATION', "False"),
+        'EBS_OPT': os.environ.get('EBS_OPT', "False"),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
