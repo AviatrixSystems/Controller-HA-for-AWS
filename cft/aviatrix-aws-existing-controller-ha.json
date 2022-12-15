@@ -147,6 +147,7 @@
                         "ec2:ModifyInstanceAttribute",
                         "ec2:CreateLaunchTemplate",
                         "ec2:DeleteLaunchTemplate",
+                        "ec2:CreateTags",
                         "lambda:UpdateFunctionConfiguration",
                         "lambda:GetFunction",
                         "lambda:GetFunctionConfiguration",

@@ -69,13 +69,13 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
 
     if inst_id:
         print("Setting launch config from instance")
-        # asg_client.create_launch_configuration(
-        #     LaunchConfigurationName=lc_name,
-        #     ImageId=ami_id,
-        #     InstanceId=inst_id,
-        #     BlockDeviceMappings=bld_map,
-        #     UserData="# Ignore"
-        # )
+        asg_client.create_launch_configuration(
+            LaunchConfigurationName=lc_name,
+            ImageId=ami_id,
+            InstanceId=inst_id,
+            BlockDeviceMappings=bld_map,
+            UserData="# Ignore"
+        )
 
         target_group_arns = get_target_group_arns(inst_id)
         if target_group_arns:
@@ -110,7 +110,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
                                            'Tags': tag_cp}],
                     # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
                     'SecurityGroupIds': sg_list,
-                    # ElasticGpuSpecifications # ElasticInferenceAccelerators # SecurityGroupIds
+                    # ElasticGpuSpecifications # ElasticInferenceAccelerators
                     # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
                     # CreditSpecification # CpuOptions # CapacityReservationSpecification
                     # LicenseSpecifications # HibernationOptions # MetadataOptions # EnclaveOptions
@@ -167,7 +167,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             asg_client.create_auto_scaling_group(
                 AutoScalingGroupName=asg_name,
                 # LaunchConfigurationName=lc_name,
-                LaunchTemplate={'LaunchTemplateName': lt_name},
+                LaunchTemplate={'LaunchTemplateName': lt_name, 'Version': '$Latest'},
                 MinSize=0,
                 MaxSize=1,
                 DesiredCapacity=0 if attach_instance else 1,

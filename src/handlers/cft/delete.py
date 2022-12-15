@@ -27,7 +27,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
             print(str(err))
     try:
         boto3.client('ec2').delete_launch_template(LaunchTemplateName=lt_name)
-    except Exception as err:
+    except botocore.exceptions.ClientError as err:
         print(str(err))
 
     try:
