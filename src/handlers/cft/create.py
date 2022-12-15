@@ -124,6 +124,7 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             # InstanceRequirements # PrivateDnsNameOptions # MaintenanceOptions
         }
     )
+    print('Created launch template')
     print(f"Target group arns list {target_group_arns}")
     tries = 0
     while tries < 3:
@@ -131,7 +132,6 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
             print("Trying to create ASG")
             asg_client.create_auto_scaling_group(
                 AutoScalingGroupName=asg_name,
-                # LaunchConfigurationName=lc_name,
                 LaunchTemplate={'LaunchTemplateName': lt_name, 'Version': '$Latest'},
                 MinSize=0,
                 MaxSize=1,
