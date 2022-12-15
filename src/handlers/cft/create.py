@@ -16,15 +16,12 @@ from errors.exceptions import AvxError
 
 
 def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
-             attach_instance=True, controller_instance_obj=None):
+             attach_instance=True):
     """ Setup HA """
     print("HA config ami_id %s, inst_type %s, inst_id %s, key_name %s, sg_list %s, "
           "attach_instance %s" % (ami_id, inst_type, inst_id, key_name, sg_list, attach_instance))
-    lt_name = lc_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
-    # AMI_NAME = LC_NAME
-    # ami_id = client.describe_images(
-    #     Filters=[{'Name': 'name','Values':
-    #  [AMI_NAME]}],Owners=['self'])['Images'][0]['ImageId']
+    lt_name = asg_name = sns_topic = os.environ.get('AVIATRIX_TAG')
+
     asg_client = boto3.client('autoscaling')
     lambda_client = boto3.client('lambda')
     sub_list = os.environ.get('SUBNETLIST')
@@ -37,10 +34,12 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         tags = json.loads(os.environ.get('TAGS'))
     except ValueError:
         print('Setting tags based on Name')
-        tags = [{'Key': 'Name', 'Value': asg_name}]
+        tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
     else:
         if not tags:
-            tags = [{'Key': 'Name', 'Value': asg_name}]
+            tags = [{'Key': 'Name', 'Value': asg_name, 'PropagateAtLaunch': True}]
+        for tag in tags:
+            tag['PropagateAtLaunch'] = True
 
     disks = json.loads(os.environ.get('DISKS'))
     if disks:
@@ -64,12 +63,9 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     ec2_client = boto3.client('ec2')
     iam_arn = os.environ.get('IAM_ARN')
     monitoring = os.environ.get('MONITORING', 'disabled') == 'enabled'
-
+    ebz_optimized = os.environ.get('EBS_OPT', 'False') == 'True'
     if inst_id:
         print("Setting launch template from instance")
-        # asg_client.create_launch_configuration(
-        #     LaunchConfigurationName=lc_name, ImageId=ami_id,  InstanceId=inst_id,
-        #     BlockDeviceMappings=bld_map, UserData="# Ignore")
 
         target_group_arns = get_target_group_arns(inst_id)
         if target_group_arns:
@@ -79,60 +75,8 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         if disable_api_term:
             update_env_dict(lambda_client, context,
                             {'DISABLE_API_TERMINATION': "True"})
-        try:
-            ec2_client.create_launch_template(
-                LaunchTemplateName=lt_name,
-                LaunchTemplateData={
-                    # 'KernelId':  '',
-                    'EbsOptimized': controller_instance_obj.get('EbsOptimized', False),
-                    'IamInstanceProfile': {'Arn': iam_arn},
-                    'BlockDeviceMappings': bld_map,
-                    'ImageId': ami_id,
-                    'InstanceType':  inst_type,
-                    # 'NetworkInterfaces'
-                    'KeyName': key_name,
-                    'Monitoring': {"Enabled": monitoring},
-                    # Placement, (az info) # RamDiskId
-                    'DisableApiTermination': disable_api_term,
-                    # InstanceInitiatedShutdownBehavior,
-                    # 'UserData': "'IyBJZ25vcmU='",# base64.b64encode("# Ignore".encode()).decode()
-                    'TagSpecifications': [{'ResourceType': 'instance',
-                                           'Tags': tags}],
-                    # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
-                    'SecurityGroupIds': sg_list,
-                    # ElasticGpuSpecifications # ElasticInferenceAccelerators
-                    # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
-                    # CreditSpecification # CpuOptions # CapacityReservationSpecification
-                    # LicenseSpecifications # HibernationOptions # MetadataOptions # EnclaveOptions
-                    # InstanceRequirements # PrivateDnsNameOptions # MaintenanceOptions
-                    # DisableApiStop
-                }
-            )
-        except Exception:
-            print(traceback.format_exc())
     else:
-        print("Setting launch config from environment")
-
-        kw_args = {
-            "LaunchConfigurationName": lc_name,
-            "ImageId": ami_id,
-            "InstanceType": inst_type,
-            "SecurityGroups": sg_list,
-            "KeyName": key_name,
-            "AssociatePublicIpAddress": True,
-            "InstanceMonitoring": {"Enabled": monitoring},
-            "BlockDeviceMappings": bld_map,
-            "UserData": "# Ignore",
-            "IamInstanceProfile": iam_arn,
-        }
-        if not key_name:
-            del kw_args["KeyName"]
-        if not iam_arn:
-            del kw_args["IamInstanceProfile"]
-        if not bld_map:
-            del kw_args["BlockDeviceMappings"]
-
-        asg_client.create_launch_configuration(**kw_args)
+        print("Setting launch template from environment")
 
         # check if target groups are still valid
         old_target_group_arns = json.loads(os.environ.get('TARGET_GROUP_ARNS', '[]'))
@@ -149,6 +93,37 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
         if len(old_target_group_arns) != len(target_group_arns):
             update_env_dict(lambda_client, context,
                             {'TARGET_GROUP_ARNS': json.dumps(target_group_arns)})
+        disable_api_term = os.environ.get('DISABLE_API_TERMINATION', 'False') == 'True'
+    tag_cp = []
+    for tag in tags:
+        tag_cp.append(dict(tag))
+        tag_cp[-1].pop('PropagateAtLaunch', None)
+
+    ec2_client.create_launch_template(
+        LaunchTemplateName=lt_name,
+        LaunchTemplateData={
+            'EbsOptimized': ebz_optimized,
+            'IamInstanceProfile': {'Arn': iam_arn},
+            'BlockDeviceMappings': bld_map,
+            'ImageId': ami_id,
+            'InstanceType': inst_type,
+            'KeyName': key_name,
+            'Monitoring': {"Enabled": monitoring},
+            'DisableApiTermination': disable_api_term,
+            'TagSpecifications': [{'ResourceType': 'instance', 'Tags': tag_cp}],
+            'SecurityGroupIds': sg_list,
+            # # Unused and unsupported parameters
+            # Placement, (az info) # RamDiskId # 'NetworkInterfaces' # 'KernelId':  '',
+            # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
+            # ElasticGpuSpecifications # ElasticInferenceAccelerators
+            # InstanceInitiatedShutdownBehavior # DisableApiStop
+            # 'UserData': "'IyBJZ25vcmU='",# base64.b64encode("# Ignore".encode()).decode()
+            # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
+            # CreditSpecification # CpuOptions # CapacityReservationSpecification
+            # LicenseSpecifications # HibernationOptions # MetadataOptions # EnclaveOptions
+            # InstanceRequirements # PrivateDnsNameOptions # MaintenanceOptions
+        }
+    )
     print(f"Target group arns list {target_group_arns}")
     tries = 0
     while tries < 3:

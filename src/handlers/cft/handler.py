@@ -92,7 +92,7 @@ def _handle_cloud_formation_request(client, event, lambda_client, controller_ins
         inst_type = controller_instanceobj['InstanceType']
         key_name = controller_instanceobj.get('KeyName', '')
         sgs = [sg_['GroupId'] for sg_ in controller_instanceobj['SecurityGroups']]
-        setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context, True, controller_instanceobj)
+        setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
 
     elif event['RequestType'] == 'Delete':
         try:
