@@ -2,7 +2,7 @@ import os
 import traceback
 
 from api.external.ami import check_ami_id
-from csp.eip import assign_eip
+from csp.eip import is_ip_elastic
 from csp.instance import verify_iam
 from csp.lambda_c import set_environ, update_env_dict
 from csp.s3 import verify_bucket, verify_backup_file, is_backup_file_is_recent, MAXIMUM_BACKUP_AGE
@@ -68,7 +68,7 @@ def _handle_cloud_formation_request(client, event, lambda_client, controller_ins
         if not verify_iam(controller_instanceobj):
             return 'FAILED', 'IAM role aviatrix-role-ec2 could not be verified to be attached to' \
                              ' controller'
-        bucket_status, bucket_region = verify_bucket(controller_instanceobj)
+        bucket_status, bucket_region = verify_bucket()
         os.environ['S3_BUCKET_REGION'] = bucket_region
         update_env_dict(lambda_client, context, {"S3_BUCKET_REGION": bucket_region})
         if not bucket_status:
@@ -78,9 +78,18 @@ def _handle_cloud_formation_request(client, event, lambda_client, controller_ins
             return 'FAILED', 'Cannot find backup file in the bucket'
         if not is_backup_file_is_recent(backup_file):
             return 'FAILED', f'Backup file is older than {MAXIMUM_BACKUP_AGE}'
-        if not assign_eip(client, controller_instanceobj, None):
-            return 'FAILED', 'Failed to associate EIP or EIP was not found.' \
-                             ' Please attach an EIP to the controller before enabling HA'
+        if os.environ.get('EIP'):
+            if not is_ip_elastic(client, os.environ.get('EIP')):
+                # Public IP but no Elastic IP
+                if not os.environ.get('API_PRIVATE_ACCESS', "False") == 'True':  # Private mode
+                    return 'FAILED', 'Failed to associate EIP or EIP was not found.' \
+                                     ' Please attach an EIP to the controller before enabling HA'
+                else:
+                    # Correct the use_eip attribute
+                    os.environ['USE_EIP'] = 'False'
+                    update_env_dict(lambda_client, context, {"USE_EIP": 'False'})
+            # else  # Elastic IP is valid and attached to the instance
+        # else # Else private mode without public IP USE_EIP=False from set_environ() above
         if not check_ami_id(controller_instanceobj['ImageId']):
             return 'FAILED', "AMI is not latest. Cannot enable Controller HA. Please backup" \
                              "/restore to the latest AMI before enabling controller HA"

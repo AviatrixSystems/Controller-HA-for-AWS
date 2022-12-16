@@ -42,8 +42,12 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             print(err)
     else:
         print("Not updating controller instance termination protection")
-    if not assign_eip(client, controller_instanceobj, os.environ.get('EIP')):
-        raise AvxError("Could not assign EIP")
+    if os.environ.get('USE_EIP', 'False') == 'True':
+        print('Assigning EIP')
+        if not assign_eip(client, controller_instanceobj, os.environ.get('EIP')):
+            raise AvxError("Could not assign EIP")
+    else:
+        print('Not Assigning EIP')
     eip = os.environ.get('EIP')
     api_private_access = os.environ.get('API_PRIVATE_ACCESS')
     new_private_ip = controller_instanceobj.get(

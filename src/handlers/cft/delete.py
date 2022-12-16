@@ -8,7 +8,7 @@ from errors.exceptions import AvxError
 
 def delete_resources(inst_id, delete_sns=True, detach_instances=True):
     """ Cloud formation cleanup"""
-    lt_name = lc_name = asg_name = os.environ.get('AVIATRIX_TAG')
+    lt_name = asg_name = os.environ.get('AVIATRIX_TAG')
 
     asg_client = boto3.client('autoscaling')
     if detach_instances:
@@ -28,7 +28,12 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
     try:
         boto3.client('ec2').delete_launch_template(LaunchTemplateName=lt_name)
     except botocore.exceptions.ClientError as err:
-        print(str(err))
+        if "InvalidLaunchTemplateName.NotFoundException" in str(err):
+            print('Launch template already deleted')
+        else:
+            print(str(err))
+    else:
+        print("Launch template deleted")
 
     try:
         asg_client.delete_auto_scaling_group(AutoScalingGroupName=asg_name,
@@ -39,14 +44,7 @@ def delete_resources(inst_id, delete_sns=True, detach_instances=True):
         else:
             raise AvxError(str(err)) from err
     print("Autoscaling group deleted")
-    try:
-        asg_client.delete_launch_configuration(LaunchConfigurationName=lc_name)
-    except botocore.exceptions.ClientError as err:
-        if "Launch configuration name not found" in str(err):
-            print('LC already deleted')
-        else:
-            print(str(err))
-    print("Launch configuration deleted")
+
     if delete_sns:
         print("Deleting SNS topic")
         sns_client = boto3.client('sns')
