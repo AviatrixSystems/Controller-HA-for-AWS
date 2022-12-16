@@ -64,6 +64,8 @@ def verify_bucket():
     except KeyError:
         print("Key LocationConstraint not found in get_bucket_location response %s" % resp)
         return False, ""
+
+    print("S3 bucket is valid.")
     return True, bucket_region
 
 
