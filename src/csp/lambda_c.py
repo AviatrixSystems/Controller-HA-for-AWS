@@ -26,7 +26,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context,
     """ Sets Environment variables """
     use_eip = os.environ.get('USE_EIP', 'True')
     # First default USE_EIP to True if unset, will be corrected while validating EIP
-    if not eip:
+    if not eip or use_eip == 'False':
         # From cloud formation. EIP is not known at this point. So get from controller inst
         eni = controller_instanceobj['NetworkInterfaces'][0]
         try:
