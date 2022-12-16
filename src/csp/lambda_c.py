@@ -24,13 +24,14 @@ def wait_function_update_successful(lambda_client, function_name,
 def set_environ(client, lambda_client, controller_instanceobj, context,
                 eip=None):
     """ Sets Environment variables """
-    use_eip = 'True'
-    if eip is None:
+    use_eip = os.environ.get('USE_EIP', 'True')
+    # First default USE_EIP to True if unset, will be corrected while validating EIP
+    if not eip:
         # From cloud formation. EIP is not known at this point. So get from controller inst
         eni = controller_instanceobj['NetworkInterfaces'][0]
         try:
             eip = eni['Association'].get('PublicIp')
-        except KeyError:
+        except KeyError:  # No public IP is available. Only supported in private mode
             if os.environ.get('API_PRIVATE_ACCESS', "False") == 'True':
                 use_eip = 'False'
                 eip = ''
