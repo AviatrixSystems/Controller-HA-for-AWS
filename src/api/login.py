@@ -12,24 +12,50 @@ def get_api_token(ip_addr):
     try:
         data = requests.get(f'https://{ip_addr}/v2/api?action=get_api_token', verify=False)
     except requests.exceptions.ConnectionError as err:
-        print("Can't connect to controller with elastic IP %s. %s" % (ip_addr, str(err)))
+        print("Can't connect to controller with IP %s. %s" % (ip_addr, str(err)))
         raise AvxError(str(err)) from err
     buf = data.content
+    if data.status_code not in [200, 404]:
+        err = f"Controller at {ip_addr} is not ready. Status code {data.status_code}  {buf}"
+        print(err)
+        raise AvxError(err)
     try:
         out = json.loads(buf)
     except ValueError:
-        print(f"Token is probably not supported. Reponse is {buf}")
-    else:
+        print(f"Token is probably not supported. Response is {buf}")
+        print('Did not obtain token')
+        return None
+    try:
+        api_return = out['return']
+    except (KeyError, AttributeError, TypeError) as err:
+        print(f"Getting return code failed due to {err}. Token may not be supported."
+              f"Response is {out}")
+        print('Did not obtain token')
+        return None
+    if api_return is False:
         try:
-            token = out['results']['api_token']
-        except (ValueError, AttributeError, TypeError, KeyError) as err:
-            print(f"Getting token failed due to {err}")
-            print(f"Token is probably not supported. Reponse is {out}")
-        else:
-            print('Obtained token')
-            return token
-    print('Did not obtain token')
-    return None
+            reason = out['reason']
+        except (KeyError, AttributeError, TypeError) as err:
+            print(f"Couldn't get reason. Response is {out}")
+            print('Did not obtain token')
+            return None
+        if reason == "RequestRefused":
+            err = f"Controller at {ip_addr} is not ready. Status code {reason} {out}"
+            print(err)
+            raise AvxError(err)
+        print(f"Getting token failed due to {reason}. Token may not be supported."
+              f"Response is {out}")
+        print('Did not obtain token')
+        return None
+    try:
+        token = out['results']['api_token']
+    except (ValueError, AttributeError, TypeError, KeyError) as err:
+        print(f"Getting token failed due to {err}")
+        print(f"Token is probably not supported. Response is {out}")
+        print('Did not obtain token')
+        return None
+    print('Obtained token')
+    return token
 
 
 def login_to_controller(ip_addr, username, pwd):
