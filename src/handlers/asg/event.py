@@ -123,8 +123,8 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 print("Logging in again")
                 try:
                     cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
-                except AvxError:  # It might not succeed since apache2 could restart
-                    print("Cannot connect to the controller")
+                except AvxError as err:  # It might not succeed since apache2 could restart
+                    print(f"Cannot connect to the controller. {err}")
                     sleep = False
                     time.sleep(INITIAL_SETUP_DELAY)
                     continue
