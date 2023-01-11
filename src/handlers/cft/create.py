@@ -98,31 +98,33 @@ def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,
     for tag in tags:
         tag_cp.append(dict(tag))
         tag_cp[-1].pop('PropagateAtLaunch', None)
-
+    lt_data = {
+        'EbsOptimized': ebz_optimized,
+        'IamInstanceProfile': {'Arn': iam_arn},
+        'BlockDeviceMappings': bld_map,
+        'ImageId': ami_id,
+        'InstanceType': inst_type,
+        'KeyName': key_name,
+        'Monitoring': {"Enabled": monitoring},
+        'DisableApiTermination': disable_api_term,
+        'TagSpecifications': [{'ResourceType': 'instance', 'Tags': tag_cp}],
+        'SecurityGroupIds': sg_list,
+        # # Unused and unsupported parameters
+        # Placement, (az info) # RamDiskId # 'NetworkInterfaces' # 'KernelId':  '',
+        # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
+        # ElasticGpuSpecifications # ElasticInferenceAccelerators
+        # InstanceInitiatedShutdownBehavior # DisableApiStop
+        # 'UserData': "'IyBJZ25vcmU='",# base64.b64encode("# Ignore".encode()).decode()
+        # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
+        # CreditSpecification # CpuOptions # CapacityReservationSpecification
+        # LicenseSpecifications # HibernationOptions # MetadataOptions # EnclaveOptions
+        # InstanceRequirements # PrivateDnsNameOptions # MaintenanceOptions
+    }
+    if not key_name:
+        lt_data.pop('KeyName')
     ec2_client.create_launch_template(
         LaunchTemplateName=lt_name,
-        LaunchTemplateData={
-            'EbsOptimized': ebz_optimized,
-            'IamInstanceProfile': {'Arn': iam_arn},
-            'BlockDeviceMappings': bld_map,
-            'ImageId': ami_id,
-            'InstanceType': inst_type,
-            'KeyName': key_name,
-            'Monitoring': {"Enabled": monitoring},
-            'DisableApiTermination': disable_api_term,
-            'TagSpecifications': [{'ResourceType': 'instance', 'Tags': tag_cp}],
-            'SecurityGroupIds': sg_list,
-            # # Unused and unsupported parameters
-            # Placement, (az info) # RamDiskId # 'NetworkInterfaces' # 'KernelId':  '',
-            # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
-            # ElasticGpuSpecifications # ElasticInferenceAccelerators
-            # InstanceInitiatedShutdownBehavior # DisableApiStop
-            # 'UserData': "'IyBJZ25vcmU='",# base64.b64encode("# Ignore".encode()).decode()
-            # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
-            # CreditSpecification # CpuOptions # CapacityReservationSpecification
-            # LicenseSpecifications # HibernationOptions # MetadataOptions # EnclaveOptions
-            # InstanceRequirements # PrivateDnsNameOptions # MaintenanceOptions
-        }
+        LaunchTemplateData=lt_data
     )
     print('Created launch template')
     print(f"Target group arns list {target_group_arns}")
