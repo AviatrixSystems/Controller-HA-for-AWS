@@ -109,6 +109,19 @@ def push_lambda_file_in_region(region):
     #         pass
     #     else:
     #         print(traceback.format_exc())
+    #
+    # resp = s3_.put_public_access_block(
+    #     Bucket=bucket_name,
+    #     PublicAccessBlockConfiguration={
+    #         'BlockPublicAcls': False,
+    #         'IgnorePublicAcls': False,
+    #         'BlockPublicPolicy': False,
+    #         'RestrictPublicBuckets': False
+    #     }
+    #     )
+    # print(resp)
+    # print(resp['PublicAccessBlockConfiguration']) for get
+    # return
 
     dst_file = os.path.basename(LAMBDA_ZIP_FILE)
     try:
