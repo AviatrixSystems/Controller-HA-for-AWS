@@ -1,6 +1,6 @@
 zip -d ../bin/aviatrix_ha.zip dev_flag
 cd ../src
-find -name "*.py"  | grep -Ev "./test/test.py" | zip ../bin/aviatrix_ha.zip -@
+find . -name "*.py"  | grep -Ev "./test/test.py" | zip ../bin/aviatrix_ha.zip -@
 cd -
 
 if [[ "$1" == "--dev" ]]; then

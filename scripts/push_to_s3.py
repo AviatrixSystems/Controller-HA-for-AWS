@@ -86,9 +86,16 @@ def push_lambda_file_s3():
                         region_name='us-west-1', aws_session_token=SESSION_TOKEN)
     regions = [reg['RegionName'] for reg in ec2_.describe_regions()['Regions']]
 
-    for region in regions:
-        print (region)
-        threading.Thread(target=push_lambda_file_in_region, args=[region]).start()
+    threads = [
+        threading.Thread(target=push_lambda_file_in_region, args=[region])
+        for region in regions
+    ]
+    for thread in threads:
+        thread.start()
+
+    # Wait for all threads to finish
+    for thread in threads:
+        thread.join()
 
 
 def push_lambda_file_in_region(region):
@@ -96,6 +103,7 @@ def push_lambda_file_in_region(region):
     bucket_name = BUCKET_PREFIX + region
     s3_ = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY,
                        region_name=region, aws_session_token=SESSION_TOKEN)
+    print(f"Pushing lambda in {region}")
 
     # # Buckets are already created now
     # try:
