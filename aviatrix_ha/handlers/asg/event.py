@@ -7,11 +7,13 @@ import boto3
 
 from aviatrix_ha.api.account import create_cloud_account
 from aviatrix_ha.api.cust import set_customer_id
+from aviatrix_ha.api.enable_central_services_staging_mode import enable_central_services_staging_mode
 from aviatrix_ha.api.initial_setup import get_initial_setup_status, run_initial_setup
 from aviatrix_ha.api.login import login_to_controller
 from aviatrix_ha.api.restore import restore_backup
 from aviatrix_ha.api.upgrade_to_build import is_upgrade_to_build_supported
 from aviatrix_ha.common.constants import (
+    DEV_FLAG,
     HANDLE_HA_TIMEOUT,
     INITIAL_SETUP_DELAY,
     WAIT_DELAY,
@@ -134,6 +136,9 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
         )
         if is_upgrade_to_build_supported(controller_api_ip, cid):
             ctrl_version = ctrl_version_with_build
+
+        if os.path.exists(DEV_FLAG):
+            enable_central_services_staging_mode(cid, controller_api_ip)
 
         initial_setup_complete = run_initial_setup(controller_api_ip, cid, ctrl_version)
 

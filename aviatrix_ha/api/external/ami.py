@@ -3,8 +3,9 @@ import os
 
 import requests
 
+from aviatrix_ha.common.constants import DEV_FLAG
+
 AMI_ID = "https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json"
-DEV_FLAG = "dev_flag"
 
 
 def check_ami_id(ami_id):
