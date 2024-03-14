@@ -1,6 +1,12 @@
+"""Call API to set controller to staging environment."""
+import time
+
 import requests
 
 from aviatrix_ha.common.constants import API_TIMEOUT
+
+
+RESTART_DELAY = 30
 
 
 def enable_central_services_staging_mode(cid, controller_api_ip):
@@ -16,4 +22,6 @@ def enable_central_services_staging_mode(cid, controller_api_ip):
         print(f"Request failed: {err}")
         return False
     else:
+        print(f"Waiting for {RESTART_DELAY} seconds for controller restart")
+        time.sleep(RESTART_DELAY)
         return True
