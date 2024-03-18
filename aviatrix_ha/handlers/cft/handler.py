@@ -1,15 +1,15 @@
 import os
 import traceback
 
-from api.external.ami import check_ami_id
-from csp.eip import is_ip_elastic
-from csp.instance import verify_iam
-from csp.lambda_c import set_environ, update_env_dict
-from csp.s3 import verify_bucket, verify_backup_file, is_backup_file_is_recent, MAXIMUM_BACKUP_AGE
-from errors.exceptions import AvxError
-from handlers.cft.create import setup_ha
-from handlers.cft.delete import delete_resources
-from handlers.cft.response import send_response
+from aviatrix_ha.api.external.ami import check_ami_id
+from aviatrix_ha.csp.eip import is_ip_elastic
+from aviatrix_ha.csp.instance import verify_iam
+from aviatrix_ha.csp.lambda_c import set_environ, update_env_dict
+from aviatrix_ha.csp.s3 import verify_bucket, verify_backup_file, is_backup_file_is_recent, MAXIMUM_BACKUP_AGE
+from aviatrix_ha.errors.exceptions import AvxError
+from aviatrix_ha.handlers.cft.create import setup_ha
+from aviatrix_ha.handlers.cft.delete import delete_resources
+from aviatrix_ha.handlers.cft.response import send_response
 
 
 def handle_cft(describe_err, event, context, client, lambda_client, controller_instanceobj,

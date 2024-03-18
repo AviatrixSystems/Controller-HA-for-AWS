@@ -3,7 +3,7 @@ import os
 import boto3
 import botocore
 
-from errors.exceptions import AvxError
+from aviatrix_ha.errors.exceptions import AvxError
 
 
 def validate_subnets(subnet_list):

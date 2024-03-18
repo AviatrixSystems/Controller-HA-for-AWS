@@ -7,12 +7,12 @@ import uuid
 import boto3
 import botocore
 
-from csp.instance import is_controller_termination_protected
-from csp.keypair import validate_keypair
-from csp.lambda_c import update_env_dict
-from csp.subnets import validate_subnets
-from csp.target_group import get_target_group_arns
-from errors.exceptions import AvxError
+from aviatrix_ha.csp.instance import is_controller_termination_protected
+from aviatrix_ha.csp.keypair import validate_keypair
+from aviatrix_ha.csp.lambda_c import update_env_dict
+from aviatrix_ha.csp.subnets import validate_subnets
+from aviatrix_ha.csp.target_group import get_target_group_arns
+from aviatrix_ha.errors.exceptions import AvxError
 
 
 def setup_ha(ami_id, inst_type, inst_id, key_name, sg_list, context,

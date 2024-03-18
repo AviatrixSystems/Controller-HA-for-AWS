@@ -1,10 +1,10 @@
 import json
 import os
 
-from csp.sg import create_new_sg
-from errors.exceptions import AvxError
-from handlers.asg.event import handle_ha_event
-from handlers.cft.handler import delete_resources, setup_ha
+from aviatrix_ha.csp.sg import create_new_sg
+from aviatrix_ha.errors.exceptions import AvxError
+from aviatrix_ha.handlers.asg.event import handle_ha_event
+from aviatrix_ha.handlers.cft.handler import delete_resources, setup_ha
 
 
 def handle_sns_event(describe_err, event, client, lambda_client, controller_instanceobj, context):

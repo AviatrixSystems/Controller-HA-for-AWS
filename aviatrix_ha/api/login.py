@@ -2,8 +2,8 @@ import json
 
 import requests
 
-from tools.string_utils import MASK
-from errors.exceptions import AvxError
+from aviatrix_ha.tools.string_utils import MASK
+from aviatrix_ha.errors.exceptions import AvxError
 
 
 def get_api_token(ip_addr):

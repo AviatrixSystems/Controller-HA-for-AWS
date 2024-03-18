@@ -2,7 +2,7 @@ import os
 
 import botocore
 
-from errors.exceptions import AvxError
+from aviatrix_ha.errors.exceptions import AvxError
 
 
 def restore_security_group_access(client, sg_id):

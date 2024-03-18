@@ -4,7 +4,7 @@ import time
 import boto3
 import requests
 
-from common.constants import INITIAL_SETUP_DELAY
+from aviatrix_ha.common.constants import INITIAL_SETUP_DELAY
 
 
 def create_cloud_account(cid, controller_ip, account_name):

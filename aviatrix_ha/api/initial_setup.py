@@ -2,7 +2,7 @@ import time
 
 import requests
 
-from errors.exceptions import AvxError
+from aviatrix_ha.errors.exceptions import AvxError
 
 INITIAL_SETUP_API_WAIT = 20
 

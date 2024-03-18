@@ -3,7 +3,7 @@ import os
 import boto3
 import botocore
 
-from errors.exceptions import AvxError
+from aviatrix_ha.errors.exceptions import AvxError
 
 
 def delete_resources(inst_id, delete_sns=True, detach_instances=True):

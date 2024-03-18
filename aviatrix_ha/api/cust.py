@@ -3,7 +3,7 @@ import time
 
 import requests
 
-from common.constants import WAIT_DELAY
+from aviatrix_ha.common.constants import WAIT_DELAY
 
 
 def set_customer_id(cid, controller_api_ip):

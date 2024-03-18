@@ -6,13 +6,13 @@ import traceback
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 import boto3
-import version
-from csp.lambda_c import update_env_dict
-from csp.sg import restore_security_group_access, create_new_sg
-from errors.exceptions import AvxError
-from csp.instance import get_controller_instance
-from handlers.cft.handler import handle_cft
-from handlers.asg.handler import handle_sns_event
+from aviatrix_ha.csp.lambda_c import update_env_dict
+from aviatrix_ha.csp.sg import restore_security_group_access, create_new_sg
+from aviatrix_ha.errors.exceptions import AvxError
+from aviatrix_ha.csp.instance import get_controller_instance
+from aviatrix_ha.handlers.cft.handler import handle_cft
+from aviatrix_ha.handlers.asg.handler import handle_sns_event
+from aviatrix_ha.version import VERSION
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -39,7 +39,7 @@ def _lambda_handler(event, context):
          created after controller failover. """
     # scheduled_event = False
     sns_event = False
-    print("Version: %s Event: %s" % (version.VERSION, event))
+    print("Version: %s Event: %s" % (VERSION, event))
     try:
         cf_request = event["StackId"]
         print("From CFT")

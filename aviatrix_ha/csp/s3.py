@@ -4,7 +4,7 @@ import time
 import boto3
 import botocore
 
-from errors.exceptions import AvxError
+from aviatrix_ha.errors.exceptions import AvxError
 VERSION_PREFIX = "UserConnect-"
 MAXIMUM_BACKUP_AGE = 24 * 3600 * 3  # 3 days
 AWS_US_EAST_REGION = 'us-east-1'

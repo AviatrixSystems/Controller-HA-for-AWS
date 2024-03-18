@@ -3,7 +3,7 @@ import os
 
 import botocore
 
-from errors.exceptions import AvxError
+from aviatrix_ha.errors.exceptions import AvxError
 
 
 def wait_function_update_successful(lambda_client, function_name,
