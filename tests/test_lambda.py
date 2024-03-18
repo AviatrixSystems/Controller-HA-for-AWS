@@ -1,8 +1,12 @@
 """ Test Module to test restore functionality"""
+
 import os
 import argparse
+
 import aviatrix_ha
-HA_TAG = 'ha_ctrl'
+
+
+HA_TAG = "ha_ctrl"
 os.environ["TESTPY"] = "True"
 os.environ["AWS_TEST_REGION"] = "us-west-2"
 
@@ -17,24 +21,72 @@ os.environ["S3_BUCKET_BACK"] = "backrestorebucketname"
 os.environ["SUBNETLIST"] = "subnet-497e8as511,subnet-87ase3,subnet-aasd6a0ef"
 
 CONTEXT = argparse.Namespace()
-TESTCASE = 4    # Choose 1 to 6 based on the message
 CONTEXT.function_name = HA_TAG + "-ha"
+
 EVENT_LIST = [
-    {"StackId": "sdfsdf", 'RequestType': 'Create'},   # 1.Cloudformation launch
-    {"Records": [{"EventSource": "aws:sns",           # 2 ASG Event lambda init
-                  "Sns": {"Message": '{Event": "autoscaling:EC2_INSTANCE_LAUNCH"}'}}]},
-    {"Records": [{"EventSource": "aws:sns",           # 3 ASG Event lambda test
-                  "Sns": {"Message": '{Event": "autoscaling:TEST_NOTIFICATION"}'}}]},
-    {"Records": [{"EventSource": "aws:sns",           # 4. ASG HA Instance Launch
-                  "Sns": {"Message": '{Event": "autoscaling:EC2_INSTANCE_LAUNCH"}'}}]},
-    {"StackId": "sdfsdf", 'RequestType': 'Delete'},   # 5 Cloudformation delete
-    {"Records": [{"EventSource": "aws:sns",           # 6. ASG HA Instance Launch Fail Sec group
-                  "Sns": {"Message": '{"Event": "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",'
-                                     '"Description": "The security group does not exist in VPC"}'}}]
-    }
+    {"StackId": "sdfsdf", "RequestType": "Create"},  # 1.Cloudformation launch
+    {
+        "Records": [
+            {
+                "EventSource": "aws:sns",  # 2 ASG Event lambda init
+                "Sns": {"Message": '{Event": "autoscaling:EC2_INSTANCE_LAUNCH"}'},
+            }
+        ]
+    },
+    {
+        "Records": [
+            {
+                "EventSource": "aws:sns",  # 3 ASG Event lambda test
+                "Sns": {"Message": '{Event": "autoscaling:TEST_NOTIFICATION"}'},
+            }
+        ]
+    },
+    {
+        "Records": [
+            {
+                "EventSource": "aws:sns",  # 4. ASG HA Instance Launch
+                "Sns": {"Message": '{Event": "autoscaling:EC2_INSTANCE_LAUNCH"}'},
+            }
+        ]
+    },
+    {"StackId": "sdfsdf", "RequestType": "Delete"},  # 5 Cloudformation delete
+    {
+        "Records": [
+            {
+                "EventSource": "aws:sns",  # 6. ASG HA Instance Launch Fail Sec group
+                "Sns": {
+                    "Message": '{"Event": "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",'
+                    '"Description": "The security group does not exist in VPC"}'
+                },
+            }
+        ]
+    },
 ]
-EVENT = EVENT_LIST[TESTCASE - 1]
-aviatrix_ha.lambda_handler(EVENT, CONTEXT)
+
+
+def test_lambda_cft_launch():
+    aviatrix_ha.lambda_handler(EVENT_LIST[0], CONTEXT)
+
+
+def test_lambda_asg_init():
+    aviatrix_ha.lambda_handler(EVENT_LIST[1], CONTEXT)
+
+
+def test_lambda_asg_test():
+    aviatrix_ha.lambda_handler(EVENT_LIST[2], CONTEXT)
+
+
+def test_lambda_asg_launch():
+    aviatrix_ha.lambda_handler(EVENT_LIST[3], CONTEXT)
+
+
+def test_lambda_cft_delete():
+    aviatrix_ha.lambda_handler(EVENT_LIST[4], CONTEXT)
+
+
+def test_lambda_asg_launch_fail_sec_group():
+    aviatrix_ha.lambda_handler(EVENT_LIST[5], CONTEXT)
+
 
 """ All message examples
 # MESSAGE 1: Cloudformation launch
