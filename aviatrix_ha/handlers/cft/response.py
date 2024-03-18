@@ -1,6 +1,6 @@
 import json
 from urllib.error import HTTPError
-from urllib.request import build_opener, HTTPHandler, Request
+from urllib.request import HTTPHandler, Request, build_opener
 
 
 def send_response(

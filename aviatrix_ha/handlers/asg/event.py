@@ -7,26 +7,26 @@ import boto3
 
 from aviatrix_ha.api.account import create_cloud_account
 from aviatrix_ha.api.cust import set_customer_id
-from aviatrix_ha.api.initial_setup import run_initial_setup, get_initial_setup_status
+from aviatrix_ha.api.initial_setup import get_initial_setup_status, run_initial_setup
 from aviatrix_ha.api.login import login_to_controller
 from aviatrix_ha.api.restore import restore_backup
 from aviatrix_ha.api.upgrade_to_build import is_upgrade_to_build_supported
 from aviatrix_ha.common.constants import (
     HANDLE_HA_TIMEOUT,
-    WAIT_DELAY,
     INITIAL_SETUP_DELAY,
+    WAIT_DELAY,
 )
 from aviatrix_ha.csp.eip import assign_eip
 from aviatrix_ha.csp.instance import enable_t2_unlimited
-from aviatrix_ha.csp.lambda_c import update_env_dict, set_environ
+from aviatrix_ha.csp.lambda_c import set_environ, update_env_dict
 from aviatrix_ha.csp.s3 import (
-    is_backup_file_is_recent,
     MAXIMUM_BACKUP_AGE,
+    is_backup_file_is_recent,
     retrieve_controller_version,
 )
 from aviatrix_ha.csp.sg import (
-    temp_add_security_group_access,
     restore_security_group_access,
+    temp_add_security_group_access,
 )
 from aviatrix_ha.errors.exceptions import AvxError
 

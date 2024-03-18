@@ -6,10 +6,10 @@ from aviatrix_ha.csp.eip import is_ip_elastic
 from aviatrix_ha.csp.instance import verify_iam
 from aviatrix_ha.csp.lambda_c import set_environ, update_env_dict
 from aviatrix_ha.csp.s3 import (
-    verify_bucket,
-    verify_backup_file,
-    is_backup_file_is_recent,
     MAXIMUM_BACKUP_AGE,
+    is_backup_file_is_recent,
+    verify_backup_file,
+    verify_bucket,
 )
 from aviatrix_ha.errors.exceptions import AvxError
 from aviatrix_ha.handlers.cft.create import setup_ha
