@@ -7,7 +7,9 @@ import boto3
 
 from aviatrix_ha.api.account import create_cloud_account
 from aviatrix_ha.api.cust import set_customer_id
-from aviatrix_ha.api.enable_central_services_staging_mode import enable_central_services_staging_mode
+from aviatrix_ha.api.enable_central_services_staging_mode import (
+    enable_central_services_staging_mode,
+)
 from aviatrix_ha.api.initial_setup import get_initial_setup_status, run_initial_setup
 from aviatrix_ha.api.login import login_to_controller
 from aviatrix_ha.api.restore import restore_backup
@@ -42,7 +44,9 @@ def _try_login(controller_api_ip, password, deadline):
             print(f"Login failed due to {err} trying again in {WAIT_DELAY}")
             time.sleep(WAIT_DELAY)
         except Exception:
-            print(f'Login failed due to {traceback.format_exc()} trying again in {WAIT_DELAY}')
+            print(
+                f"Login failed due to {traceback.format_exc()} trying again in {WAIT_DELAY}"
+            )
             time.sleep(WAIT_DELAY)
     return None
 
@@ -117,7 +121,9 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {"TMP_SG_GRP": sg_modified})
-        cid = _try_login(controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT)
+        cid = _try_login(
+            controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT
+        )
         if cid is None or time.time() - start_time >= HANDLE_HA_TIMEOUT:
             print(
                 "Could not login to the controller. Attempting to handle login failure"
@@ -141,11 +147,21 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
 
         if os.path.exists(DEV_FLAG):
             if enable_central_services_staging_mode(cid, controller_api_ip):
-                cid = _try_login(controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT)
+                cid = _try_login(
+                    controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT
+                )
                 if cid is None or time.time() - start_time >= HANDLE_HA_TIMEOUT:
-                    print("Could not login to the controller. Attempting to handle login failure")
-                    handle_login_failure(controller_api_ip, client, lambda_client, controller_instanceobj,
-                                         context, eip)
+                    print(
+                        "Could not login to the controller. Attempting to handle login failure"
+                    )
+                    handle_login_failure(
+                        controller_api_ip,
+                        client,
+                        lambda_client,
+                        controller_instanceobj,
+                        context,
+                        eip,
+                    )
                     return
 
         initial_setup_complete = run_initial_setup(controller_api_ip, cid, ctrl_version)

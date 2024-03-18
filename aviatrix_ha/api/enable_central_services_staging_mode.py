@@ -1,4 +1,5 @@
 """Call API to set controller to staging environment."""
+
 import time
 
 import requests
