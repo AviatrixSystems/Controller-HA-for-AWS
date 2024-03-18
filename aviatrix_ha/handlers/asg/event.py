@@ -7,11 +7,15 @@ import boto3
 
 from aviatrix_ha.api.account import create_cloud_account
 from aviatrix_ha.api.cust import set_customer_id
+from aviatrix_ha.api.enable_central_services_staging_mode import (
+    enable_central_services_staging_mode,
+)
 from aviatrix_ha.api.initial_setup import get_initial_setup_status, run_initial_setup
 from aviatrix_ha.api.login import login_to_controller
 from aviatrix_ha.api.restore import restore_backup
 from aviatrix_ha.api.upgrade_to_build import is_upgrade_to_build_supported
 from aviatrix_ha.common.constants import (
+    DEV_FLAG,
     HANDLE_HA_TIMEOUT,
     INITIAL_SETUP_DELAY,
     WAIT_DELAY,
@@ -31,6 +35,22 @@ from aviatrix_ha.csp.sg import (
 from aviatrix_ha.errors.exceptions import AvxError
 
 
+def _try_login(controller_api_ip, password, deadline):
+    while time.time() < deadline:
+        try:
+            cid = login_to_controller(controller_api_ip, "admin", password)
+            return cid
+        except AvxError as err:
+            print(f"Login failed due to {err} trying again in {WAIT_DELAY}")
+            time.sleep(WAIT_DELAY)
+        except Exception:
+            print(
+                f"Login failed due to {traceback.format_exc()} trying again in {WAIT_DELAY}"
+            )
+            time.sleep(WAIT_DELAY)
+    return None
+
+
 def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     """Restores the backup by doing the following
     1. Login to new controller
@@ -47,7 +67,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             boto3.resource("ec2").Instance(  # pylint: disable=no-member
                 controller_instanceobj["InstanceId"]
             ).modify_attribute(DisableApiTermination={"Value": True})
-            print("Updated controller instance termination protection " "to be true")
+            print("Updated controller instance termination protection to be true")
         except Exception as err:
             print(err)
     else:
@@ -101,20 +121,10 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     try:
         if not duplicate:
             update_env_dict(lambda_client, context, {"TMP_SG_GRP": sg_modified})
-        while time.time() - start_time < HANDLE_HA_TIMEOUT:
-            try:
-                cid = login_to_controller(controller_api_ip, "admin", new_private_ip)
-            except AvxError as err:
-                print(f"Login failed due to {err} trying again in {WAIT_DELAY}")
-                time.sleep(WAIT_DELAY)
-            except Exception:
-                print(
-                    f"Login failed due to {traceback.format_exc()} trying again in {WAIT_DELAY}"
-                )
-                time.sleep(WAIT_DELAY)
-            else:
-                break
-        if time.time() - start_time >= HANDLE_HA_TIMEOUT:
+        cid = _try_login(
+            controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT
+        )
+        if cid is None or time.time() - start_time >= HANDLE_HA_TIMEOUT:
             print(
                 "Could not login to the controller. Attempting to handle login failure"
             )
@@ -134,6 +144,25 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
         )
         if is_upgrade_to_build_supported(controller_api_ip, cid):
             ctrl_version = ctrl_version_with_build
+
+        if os.path.exists(DEV_FLAG):
+            if enable_central_services_staging_mode(cid, controller_api_ip):
+                cid = _try_login(
+                    controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT
+                )
+                if cid is None or time.time() - start_time >= HANDLE_HA_TIMEOUT:
+                    print(
+                        "Could not login to the controller. Attempting to handle login failure"
+                    )
+                    handle_login_failure(
+                        controller_api_ip,
+                        client,
+                        lambda_client,
+                        controller_instanceobj,
+                        context,
+                        eip,
+                    )
+                    return
 
         initial_setup_complete = run_initial_setup(controller_api_ip, cid, ctrl_version)
 
