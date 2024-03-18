@@ -2,4 +2,4 @@
 
 
 class AvxError(Exception):
-    """ Error class for Aviatrix exceptions"""
+    """Error class for Aviatrix exceptions"""
