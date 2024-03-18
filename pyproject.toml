@@ -6,7 +6,7 @@ authors = ["Aviatrix <support@aviatrix.com>"]
 license = "Apache 2.0"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.11"
 requests = "^2.31.0"
 urllib3 = "^2.2.1"
 
