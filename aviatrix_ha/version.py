@@ -1,3 +1,3 @@
 """ Version information"""
 
-VERSION = "2.02"
+VERSION = "2.03"
