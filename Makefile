@@ -15,7 +15,7 @@ cft/aviatrix-aws-existing-controller-ha-dev.json: cft/aviatrix-aws-existing-cont
 
 .PHONY: push
 push: bin/aviatrix_ha.zip
-	poetry run python3 scripts/push_to_s3.py --dev --lambda_zip_file=bin/aviatrix_ha.zip --cft_file=cft/aviatrix-aws-existing-controller-ha.json
+	poetry run python3 scripts/push_to_s3.py --lambda_zip_file=bin/aviatrix_ha.zip --cft_file=cft/aviatrix-aws-existing-controller-ha.json
 
 .PHONY: push_dev
 push_dev: bin/aviatrix_ha_dev.zip cft/aviatrix-aws-existing-controller-ha-dev.json
