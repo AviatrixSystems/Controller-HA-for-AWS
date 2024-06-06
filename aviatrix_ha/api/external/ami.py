@@ -4,7 +4,7 @@ import requests
 
 from aviatrix_ha.common.constants import DEV_FLAG
 
-AMI_ID = "https://cdn.aviatrix.com/image-details//aws_controller_image_details.json"
+AMI_ID = "https://cdn.aviatrix.com/image-details/aws_controller_image_details.json"
 
 
 def _has_value(data, key):
