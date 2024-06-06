@@ -4,7 +4,17 @@ import requests
 
 from aviatrix_ha.common.constants import DEV_FLAG
 
-AMI_ID = "https://aviatrix-download.s3-us-west-2.amazonaws.com/AMI_ID/ami_id.json"
+AMI_ID = "https://cdn.aviatrix.com/image-details//aws_controller_image_details.json"
+
+
+def _has_value(data, key):
+    for k, v in data.items():
+        if isinstance(v, dict):
+            if _has_value(v, key):
+                return True
+        else:
+            return v == key
+    return False
 
 
 def check_ami_id(ami_id):
@@ -17,10 +27,9 @@ def check_ami_id(ami_id):
         resp = requests.get(AMI_ID)
         resp.raise_for_status()
         ami_dict = resp.json()
-        for image_type in ami_dict:
-            if ami_id in list(ami_dict[image_type].values()):
-                print("AMI is valid")
-                return True
+        if _has_value(ami_dict, ami_id):
+            print("AMI is valid")
+            return True
         print(
             "AMI is not latest. Cannot enable Controller HA. Please backup restore to the latest AMI"
             "before enabling controller HA"

@@ -22,10 +22,17 @@ class TestCheckAmiId(unittest.TestCase):
                     "us-east-1": "ami-06ebb151f753c54a8",
                     "us-east-2": "ami-0c3e2aa105b6fe227",
                 },
+                "g3": {
+                    "amd64": {
+                        "us-east-1": "ami-aaaaa",
+                        "us-east-2": "ami-bbbbb",
+                    }
+                }
             },
         )
         self.assertTrue(ami.check_ami_id("ami-03c5c2226878f03c4"))
         self.assertFalse(ami.check_ami_id("ami-03c5c2226878f03c5"))
+        self.assertTrue(ami.check_ami_id("ami-aaaaa"))
 
     @responses.activate
     def test_check_ami_id_http_404(self):
