@@ -22,12 +22,12 @@ except KeyError as err:
     sys.exit("Make sure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set")
 
 BUCKET_PREFIX = "aviatrix-lambda-"
-LAMBDA_ZIP_FILE = "bin/aviatrix_ha.zip"
-LAMBDA_ZIP_DEV_FILE_STR = "aviatrix_ha_dev.zip"
+LAMBDA_ZIP_FILE = "bin/aviatrix_ha_v3.zip"
+LAMBDA_ZIP_DEV_FILE_STR = "aviatrix_ha_v3_dev.zip"
 
 CFT_BUCKET_NAME = "aviatrix-cloudformation-templates"
 CFT_BUCKET_REGION = "us-west-2"
-CFT_FILE_NAME = "cft/aviatrix-aws-existing-controller-ha.json"
+CFT_FILE_NAME = "cft/aviatrix-aws-existing-controller-ha-v3.json"
 
 
 def _validate_inputs(args: argparse.Namespace):
