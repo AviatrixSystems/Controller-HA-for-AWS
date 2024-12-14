@@ -9,7 +9,7 @@ from aviatrix_ha.common.constants import WAIT_DELAY
 def set_customer_id(cid, controller_api_ip):
     """Set the customer ID if set in environment to migrate to a different AMI type"""
     print("Setting up Customer ID")
-    base_url = "https://" + controller_api_ip + "/v1/api"
+    base_url = "https://" + controller_api_ip + "/v2/api"
     post_data = {
         "CID": cid,
         "action": "setup_customer_id",

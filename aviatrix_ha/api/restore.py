@@ -14,7 +14,7 @@ def restore_backup(cid, controller_ip, s3_file, account_name):
     }
     print("Trying to restore config with data %s\n" % str(restore_data))
     restore_data["CID"] = cid
-    base_url = "https://" + controller_ip + "/v1/api"
+    base_url = "https://" + controller_ip + "/v2/api"
     try:
         response = requests.post(base_url, data=restore_data, verify=False)
     except requests.exceptions.ConnectionError as err:
