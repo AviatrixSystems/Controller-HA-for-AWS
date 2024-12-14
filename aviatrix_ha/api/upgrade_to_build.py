@@ -6,7 +6,7 @@ import requests
 def is_upgrade_to_build_supported(ip_addr, cid):
     """Check if the version supports upgrade to build"""
     print("Checking if upgrade to build is suppported")
-    base_url = "https://" + ip_addr + "/v1/api"
+    base_url = "https://" + ip_addr + "/v2/api"
     post_data = {"CID": cid, "action": "get_feature_info"}
     try:
         response = requests.post(base_url, data=post_data, verify=False)

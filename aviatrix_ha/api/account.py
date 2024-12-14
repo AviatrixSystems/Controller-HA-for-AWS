@@ -12,7 +12,7 @@ def create_cloud_account(cid, controller_ip, account_name):
     print("Creating temporary account")
     client = boto3.client("sts")
     aws_acc_num = client.get_caller_identity()["Account"]
-    base_url = "https://%s/v1/api" % controller_ip
+    base_url = "https://%s/v2/api" % controller_ip
     post_data = {
         "action": "setup_account_profile",
         "account_name": account_name,
