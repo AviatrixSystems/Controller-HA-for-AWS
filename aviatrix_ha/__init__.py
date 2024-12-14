@@ -11,7 +11,7 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from aviatrix_ha.csp.instance import get_controller_instance
 from aviatrix_ha.csp.lambda_c import update_env_dict
-from aviatrix_ha.csp.sg import create_new_sg, restore_security_group_access
+from aviatrix_ha.csp.sg import restore_security_group_access
 from aviatrix_ha.errors.exceptions import AvxError
 from aviatrix_ha.handlers.asg.handler import handle_sns_event
 from aviatrix_ha.handlers.cft.handler import handle_cft
@@ -42,7 +42,7 @@ def _lambda_handler(event, context):
      created after controller failover."""
     # scheduled_event = False
     sns_event = False
-    print("Version: %s Event: %s" % (VERSION, event))
+    print(f"Version: {VERSION} Event: {event}")
     try:
         cf_request = event["StackId"]
         print("From CFT")
@@ -74,7 +74,7 @@ def _lambda_handler(event, context):
 
     tmp_sg = os.environ.get("TMP_SG_GRP", "")
     if tmp_sg:
-        print("Lambda probably did not complete last time. Reverting sg %s" % tmp_sg)
+        print(f"Lambda probably did not complete last time. Reverting {tmp_sg}")
         update_env_dict(lambda_client, context, {"TMP_SG_GRP": ""})
         restore_security_group_access(client, tmp_sg)
     instance_name = os.environ.get("AVIATRIX_TAG")
