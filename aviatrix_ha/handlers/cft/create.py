@@ -1,7 +1,7 @@
+import base64
 import json
 import os
 import time
-import traceback
 import uuid
 
 import boto3
@@ -110,6 +110,13 @@ def setup_ha(
     for tag in tags:
         tag_cp.append(dict(tag))
         tag_cp[-1].pop("PropagateAtLaunch", None)
+    cloud_init = """\
+avx-controller:
+  environment: staging
+  avx-controller-version: ${software_version}
+  extra-bootstrap-args:
+    use-containerized-gateway: ${use_containerized_gateway}
+"""
     lt_data = {
         "EbsOptimized": ebz_optimized,
         "IamInstanceProfile": {"Arn": iam_arn},
@@ -121,12 +128,12 @@ def setup_ha(
         "DisableApiTermination": disable_api_term,
         "TagSpecifications": [{"ResourceType": "instance", "Tags": tag_cp}],
         "SecurityGroupIds": sg_list,
+        "UserData": base64.b64encode(cloud_init),
         # # Unused and unsupported parameters
         # Placement, (az info) # RamDiskId # 'NetworkInterfaces' # 'KernelId':  '',
         # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
         # ElasticGpuSpecifications # ElasticInferenceAccelerators
         # InstanceInitiatedShutdownBehavior # DisableApiStop
-        # 'UserData': "'IyBJZ25vcmU='",# base64.b64encode("# Ignore".encode()).decode()
         # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
         # CreditSpecification # CpuOptions # CapacityReservationSpecification
         # LicenseSpecifications # HibernationOptions # MetadataOptions # EnclaveOptions
