@@ -15,6 +15,7 @@ from aviatrix_ha.csp.sg import restore_security_group_access
 from aviatrix_ha.errors.exceptions import AvxError
 from aviatrix_ha.handlers.asg.handler import handle_sns_event
 from aviatrix_ha.handlers.cft.handler import handle_cft
+from aviatrix_ha.handlers.function.handler import handle_function_event
 from aviatrix_ha.version import VERSION
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -25,7 +26,7 @@ print("Loading function")
 def lambda_handler(event, context):
     """Entry point of the lambda script"""
     try:
-        _lambda_handler(event, context)
+        return _lambda_handler(event, context)
     except AvxError as err:
         print("Operation failed due to: " + str(err))
     except Exception as err:  # pylint: disable=broad-except
@@ -34,12 +35,13 @@ def lambda_handler(event, context):
 
 
 def _lambda_handler(event, context):
-    """Entry point of the lambda script without exception hadling
-    This lambda function will serve 2 kinds of requests:
-    one time request from CFT - Request to setup HA (setup_ha method)
-     made by Cloud formation template.
-    sns_event - Request from sns to attach elastic ip to new instance
-     created after controller failover."""
+    """Entry point of the lambda script without exception handling
+    This lambda function will serve muliple kinds of requests:
+    1) request from CFT - Request to setup HA (setup_ha method) made by CloudFormation template.
+    2) sns_event - Request from sns to attach elastic ip to new instance
+       created after controller failover.
+    3) function_request - request to the function url
+     """
     # scheduled_event = False
     sns_event = False
     print(f"Version: {VERSION} Event: {event}")
@@ -54,23 +56,17 @@ def _lambda_handler(event, context):
         print("From SNS Event")
     except (AttributeError, IndexError, KeyError, TypeError):
         pass
-    if os.environ.get("TESTPY") == "True":
-        print("Testing")
-        client = boto3.client(
-            "ec2",
-            region_name=os.environ["AWS_TEST_REGION"],
-            aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
-            aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"],
-        )
-        lambda_client = boto3.client(
-            "lambda",
-            region_name=os.environ["AWS_TEST_REGION"],
-            aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
-            aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"],
-        )
-    else:
-        client = boto3.client("ec2")
-        lambda_client = boto3.client("lambda")
+    try:
+        function_headers = event["headers"]
+        function_request = event["requestContext"]
+        print("From Function Request")
+    except (KeyError, AttributeError):
+        function_headers = None
+        function_request = None
+        print("Not from Function Request")
+
+    client = boto3.client("ec2")
+    lambda_client = boto3.client("lambda")
 
     tmp_sg = os.environ.get("TMP_SG_GRP", "")
     if tmp_sg:
@@ -85,7 +81,7 @@ def _lambda_handler(event, context):
     )
 
     if cf_request:
-        handle_cft(
+        return handle_cft(
             describe_err,
             event,
             context,
@@ -95,8 +91,11 @@ def _lambda_handler(event, context):
             instance_name,
         )
     elif sns_event:
-        handle_sns_event(
+        return handle_sns_event(
             describe_err, event, client, lambda_client, controller_instanceobj, context
         )
+    elif function_headers is not None and function_request is not None :
+        return handle_function_event(event, context)
     else:
         print("Unknown source. Not from CFT or SNS")
+        return False

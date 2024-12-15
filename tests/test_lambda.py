@@ -1,252 +1,318 @@
 """ Test Module to test restore functionality"""
 
-import os
 import argparse
+import json
+import os
+import ssl
+from typing import Any
+
+import boto3
+import botocore
+import moto
+import pytest
+from pytest_httpserver import HTTPServer
+import trustme
+import werkzeug.wrappers as wrappers
 
 import aviatrix_ha
 
 
 HA_TAG = "ha_ctrl"
-os.environ["TESTPY"] = "True"
-os.environ["AWS_TEST_REGION"] = "us-west-2"
-
-os.environ["AVIATRIX_PASS_BACK"] = "Oldbkuppwd"
-os.environ["AVIATRIX_TAG"] = HA_TAG
-os.environ["AVIATRIX_USER_BACK"] = "admin"
-os.environ["AWS_ACCESS_KEY_BACK"] = "access_key"
-os.environ["AWS_SECRET_KEY_BACK"] = "secret_key"
-os.environ["EIP"] = "54.2.2.4"  # New controller IP
-os.environ["PRIV_IP"] = "172.31.45.188"  # Older private IP
-os.environ["S3_BUCKET_BACK"] = "backrestorebucketname"
-os.environ["SUBNETLIST"] = "subnet-497e8as511,subnet-87ase3,subnet-aasd6a0ef"
 
 CONTEXT = argparse.Namespace()
 CONTEXT.function_name = HA_TAG + "-ha"
+CONTEXT.log_stream_name = "aviatrix_ha"
 
-EVENT_LIST = [
-    {"StackId": "sdfsdf", "RequestType": "Create"},  # 1.Cloudformation launch
-    {
+
+# https://github.com/getmoto/moto/blob/master/tests/__init__.py
+MOTO_AMI_ID = "ami-12c6146b"
+
+
+@pytest.fixture(autouse=True)
+def setup_env(monkeypatch):
+    # defined in cft/aviatrix-aws-existing-controller-ha-v3.json
+    monkeypatch.setenv("AVIATRIX_TAG", HA_TAG)
+    monkeypatch.setenv("AWS_ROLE_APP_NAME", "aviatrix-role-app")
+    monkeypatch.setenv("AWS_ROLE_EC2_NAME", "aviatrix-role-ec2")
+    monkeypatch.setenv("SUBNETLIST", "subnet-497e8as511,subnet-87ase3,subnet-aasd6a0ef")
+    monkeypatch.setenv("S3_BUCKET_BACK", "backup-bucket")
+    monkeypatch.setenv("API_PRIVATE_ACCESS", "False")
+    monkeypatch.setenv("NOTIF_EMAIL", "nobody@aviatrix.com")
+
+    # Make sure we are not using real AWS credentials
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_SECURITY_TOKEN", "testing")
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+
+
+def _cft_message(request_type, lambda_arn):
+    return {
+        "RequestType": request_type,
+        "StackId": "arn:aws:cloudformation:us-west-2:1234567",
+        "ServiceToken": lambda_arn,
+        "ResponseURL": "https://cloudformation-custom-resource-response",
+        "RequestId": "6c5486f4-bd67-4fcc-919a-bee7351c5d0c",
+        "LogicalResourceId": "SetupHA",
+        "ResourceType": "Custom::SetupHA",
+        "ResourceProperties": {
+            "ServiceToken": lambda_arn,
+            "ServiceURL": "https://test.lambda-url.us-east-1.on.aws/",
+        },
+    }
+
+
+def _sns_message(event_type):
+    return {
         "Records": [
             {
-                "EventSource": "aws:sns",  # 2 ASG Event lambda init
-                "Sns": {"Message": '{Event": "autoscaling:EC2_INSTANCE_LAUNCH"}'},
-            }
-        ]
-    },
-    {
-        "Records": [
-            {
-                "EventSource": "aws:sns",  # 3 ASG Event lambda test
-                "Sns": {"Message": '{Event": "autoscaling:TEST_NOTIFICATION"}'},
-            }
-        ]
-    },
-    {
-        "Records": [
-            {
-                "EventSource": "aws:sns",  # 4. ASG HA Instance Launch
-                "Sns": {"Message": '{Event": "autoscaling:EC2_INSTANCE_LAUNCH"}'},
-            }
-        ]
-    },
-    {"StackId": "sdfsdf", "RequestType": "Delete"},  # 5 Cloudformation delete
-    {
-        "Records": [
-            {
-                "EventSource": "aws:sns",  # 6. ASG HA Instance Launch Fail Sec group
+                "EventSource": "aws:sns",
                 "Sns": {
-                    "Message": '{"Event": "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",'
-                    '"Description": "The security group does not exist in VPC"}'
+                    "Message": f'{{"Event": "{event_type}"}}',
                 },
             }
         ]
-    },
-]
+    }
 
 
-def test_lambda_cft_launch():
-    aviatrix_ha.lambda_handler(EVENT_LIST[0], CONTEXT)
+def mock_send_response(event, context, status, reason, **kwargs):
+    if status != "SUCCESS":
+        pytest.fail(f"{status}: {reason}")
 
 
-def test_lambda_asg_init():
-    aviatrix_ha.lambda_handler(EVENT_LIST[1], CONTEXT)
+orig = botocore.client.BaseClient._make_api_call
 
 
-def test_lambda_asg_test():
-    aviatrix_ha.lambda_handler(EVENT_LIST[2], CONTEXT)
+def mock_make_api_call(self, operation_name, kwarg):
+    # stub out calls not supported by moto
+    if operation_name in (
+        "PutNotificationConfiguration",
+        "ModifyInstanceCreditSpecification",
+    ):
+        return
+    return orig(self, operation_name, kwarg)
 
 
-def test_lambda_asg_launch():
-    aviatrix_ha.lambda_handler(EVENT_LIST[3], CONTEXT)
+@pytest.fixture(scope="session")
+def ca():
+    return trustme.CA()
 
 
-def test_lambda_cft_delete():
-    aviatrix_ha.lambda_handler(EVENT_LIST[4], CONTEXT)
+@pytest.fixture(scope="session")
+def httpserver_ssl_context(ca):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    localhost_cert = ca.issue_cert("localhost")
+    localhost_cert.configure_cert(context)
+    return context
 
 
-def test_lambda_asg_launch_fail_sec_group():
-    aviatrix_ha.lambda_handler(EVENT_LIST[5], CONTEXT)
+def respond_with_json(data: dict[str, Any]) -> wrappers.Response:
+    return wrappers.Response(json.dumps(data), content_type="application/json")
 
 
-""" All message examples
-# MESSAGE 1: Cloudformation launch
-{u'StackId': u'arn:aws:cloudformation:us-west-2:09420***',
- u'ResponseURL': u'https://cloudformation-custom-resource-response***',
- u'ResourceProperties': {u'ServiceToken': u'arn:aws:la***function:ha_ctrl-ha'},
- u'RequestType': u'Create', u'ServiceToken': u'arn:aws:l***function:ha_ctrl-ha',
- u'ResourceType': u'Custom::SetupHA',
- u'RequestId': u'6c5486f4-bd67-4fcc-919a-bee7351c5d0c',
- u'LogicalResourceId': u'SetupHA'}
+def v2_api_handler(request: wrappers.Request) -> wrappers.Response:
+    print(request.json)
+    if request.json.get("action") == "login":
+        if request.json.get("username") == "admin":
+            return respond_with_json({"return": True, "CID": "mycid"})
+        return respond_with_json({"return": False})
 
-# MESSAGE 2: Attach to ASG HA event (Will be ignored due to incorrect password, no way to detect)
-{u'Records': [
-    {u'EventVersion': u'1.0',
-     u'EventSubscriptionArn': u'arn:aws:sns:us-sdfsdf***',
-     u'EventSource': u'aws:sns',
-     u'Sns': {
-         u'SignatureVersion': u'1',
-         u'Timestamp': u'2018-07-11T00:29:38.704Z',
-         u'Signature': u'5HBNtODGJzdKejn7eN/DucvVS***',
-         u'SigningCertUrl': u'https://sns.us-west-2.amazos',
-         u'MessageId': u'b5235c90-8ae6-5e09-8ec5-sdf',
-         u'Message': {
-             "Progress": 50,
-             "AccountId": "09420830sadfaqwe",
-             "Description": "Attaching an existing EC2 instance: i-02c7e76sadf3***",
-             "RequestId": "8055921a-f932-7ec1-1a55-6dasdf4",
-             "EndTime": "2018-07-11T00:29:38.655Z",
-             "AutoScalingGroupARN": "arn:aws:autoscaling***ha_ctrl",
-             "ActivityId": "8055921a-f932-7ec1-1a55-6d0asdf",
-             "StartTime": "2018-07-11T00:29:35.775Z",
-             "Service": "AWS Auto Scaling",
-             "Time": "2018-07-11T00:29:38.655Z",
-             "EC2InstanceId": "i-02c7e766bb2fasdf",
-             "StatusCode": "InProgress",
-             "StatusMessage": "",
-             "Details": {"Availability Zone": "us-west-2b"},
-             "AutoScalingGroupName": "ha_ctrl",
-             "Cause": "At 2018-07-11T00:29:35Z an instance was added in response to user request."
-                      " Keeping the capacity at the new 1.",
-             "Event": "autoscaling:EC2_INSTANCE_LAUNCH"},
-         u'MessageAttributes': {},
-         u'Type': u'Notification',
-         u'UnsubscribeUrl': u'****',
-         u'TopicArn': u'arn:aws:sns:us-west-2:094208adf:ha_ctrl',
-         u'Subject': u'Auto Scaling: launch for group "ha_ctrl"'
-     }}]}
+    if request.json.get("action") == "initial_setup":
+        return respond_with_json({"return": True})
 
-# MESSAGE 3: Test message from ASG (Will be ignored)
-{u'Records': [{
-    u'EventVersion': u'1.0',
-    u'EventSubscriptionArn': u'arn:aws:sns:us-west-2:0942sdf3asdfasdf:ha****',
-    u'EventSource': u'aws:sns',
-    u'Sns': {
-        u'SignatureVersion': u'1',
-        u'Timestamp': u'2018-07-11T00:29:37.017Z',
-        u'Signature': u'YRdc1g****XdfyyN2dZAodzQ6=',
-        u'SigningCertUrl': u'https://****m',
-        u'MessageId': u'43c55a35-2f83-5a1b-8f02-098asdff8',
-        u'Message': {
-            "AccountId": "0942083asdfas",
-            "RequestId": "7daf9553-84a1-11e8-bc02-b1a9e72fca9d",
-            "AutoScalingGroupARN": "arn:aws:autosZZZ***ha_ctrl",
-            "AutoScalingGroupName": "ha_ctrl",
-            "Service": "AWS Auto Scaling",
-            "Event": "autoscaling:TEST_NOTIFICATION",
-            "Time": "2018-07-11T00:29:36.940Z"},
-        U'MessageAttributes': {},
-        u'Type': u'Notification',
-        u'UnsubscribeUrl': u'https://snASDFASD****',
-        u'TopicArn': u'arn:aws:sns:us-west-2:***:ha_ctrl',
-        u'Subject': u'Auto Scaling: test notification for group "ha_ctrl"'
-    }}]}
+    if request.json.get("action") == "setup_account_profile":
+        if request.json.get("account_name") == "tempacc":
+            return respond_with_json({"return": True})
+        return respond_with_json({"return": False})
 
-# MESSAGE 4: HA event from ASG
-{u'Records': [{
-    u'EventVersion': u'1.0',
-    u'EventSubscriptionArn': u'arn:aws:sns:us-west***',
-    u'EventSource': u'aws:sns',
-    u'Sns': {
-        u'SignatureVersion': u'1',
-        u'Timestamp': u'2018-07-11T00:29:38.704Z',
-        u'Signature': u'****3DOHkd9MIbbHpDX5HBNtODGJ**',
-        u'SigningCertUrl': u'https://**',
-        u'MessageId': u'b5235c90-8ae6-5e09-8ec5-***',
-        u'Message': {
-            "Progress": 50,
-            "AccountId": "094208*****",
-            "Description": "Attaching an existing EC2 instance: i-***",
-            "RequestId": "8055921a-f932-7ec1-1a55-***",
-            "EndTime": "2018-07-11T00:29:38.655Z",
-            "AutoScalingGroupARN": "arn:aws:autoscaliZ******/ha_ctrl",
-            "ActivityId": "8055921a-f932-7ec1-1a55-***",
-            "StartTime": "2018-07-11T00:29:35.775Z",
-            "Service": "AWS Auto Scaling",
-            "Time": "2018-07-11T00:29:38.655Z",
-            "EC2InstanceId": "i-02c7e766bb2f36***d",
-            "StatusCode": "InProgress",
-            "StatusMessage": "",
-            "Details": {"Availability Zone": "us-west-2b"},
-            "AutoScalingGroupName": "ha_ctrl",
-            "Cause": "At 2018-07-11T00:29:35Z an instance was added in response to user request."
-                     " Keeping the capacity at the new 1.",
-            "Event": "autoscaling:EC2_INSTANCE_LAUNCH"},
-        u'MessageAttributes': {},
-        u'Type': u'Notification',
-        u'UnsubscribeUrl': u'htt******',
-        u'TopicArn': u'arn:aws:sns:us-west-2:***:ha_ctrl',
-        u'Subject': u'Auto Scaling: launch for group "ha_ctrl"'
-    }}]}
+    if request.json.get("action") == "restore_cloudx_config":
+        if request.json.get("account_name") == "tempacc":
+            return respond_with_json({"return": True})
+        return respond_with_json({"return": False})
+
+    return wrappers.Response(status=404)
 
 
-# MESSAGE 5: CFT Delete
-{u'StackId': u'arn:aws:cloudformation***',
- u'ResponseURL': u'https://clou***D',
- u'ResourceProperties': {
-     u'ServiceToken': u'arn:aws:lambda:us-west-2:094208*****:function:ha_ctrl-ha'},
- u'RequestType': u'Delete',
- u'ServiceToken': u'arn:aws:lambda:us-west-2:094208*****:function:ha_ctrl-ha',
- u'ResourceType': u'Custom::SetupHA',
- u'PhysicalResourceId': u'2018/07/11/[$LATEST]163c82a474f142d28a45d404d56c849d',
- u'RequestId': u'1ffc6b70-2264-4f07-a29c-a8bef1b273e6',
- u'LogicalResourceId': u'SetupHA'}
+def patch_instance_security_group(ec2, sg_name):
+    """Workaround a bug in moto where security group is not attached to
+    instance by the ASG"""
+    rsp = ec2.describe_instances(
+        Filters=[
+            {"Name": "instance-state-name", "Values": ["running"]},
+            {"Name": "tag:Name", "Values": [HA_TAG]},
+        ],
+    )
+    instance_id = rsp["Reservations"][0]["Instances"][0]["InstanceId"]
+    rsp = ec2.describe_security_groups(
+        Filters=[{"Name": "group-name", "Values": [sg_name]}],
+    )
+    sg_id = rsp["SecurityGroups"][0]["GroupId"]
+    print(f"Modifying instance {instance_id} to use security group {sg_id}")
+    ec2.modify_instance_attribute(
+        InstanceId=instance_id,
+        Groups=[sg_id],
+    )
 
 
-# MESSAGE 6: Instance launch failure
-{u'Records': [{
-    u'EventVersion': u'1.0',
-    u'EventSubscriptionArn': u'arn:aw***',
-    u'EventSource': u'aws:sns',
-    u'Sns': {
-        u'SignatureVersion': u'1',
-        u'Timestamp': u'2018-07-11T23:14:38.564Z',
-        u'Signature': u'iTME2+k+kl/rsiGceDvB6JK+kl/xCgfpFGNuEFlOR1nCQ+bwmRE/kl+gaeRg==',
-        u'SigningCertUrl': u'https://sns.us-west-2.amazonaws.com/l-kl;.pem',
-        u'MessageId': u'73c91909-27cd-5b5a-a2a6-4ac9b6535609',
-        u'Message': {
-            "Progress": 100,
-            "AccountId": "094208*****",
-            "Description": "Launching a new EC2 instance. Status Reason: The security group"
-                           " \'sg-3d7bcc4d\' does not exist in VPC \'vpc-be5433da\'. Launching"
-                           " EC2 instance failed.",
-            "RequestId": "c865922e-8021-d8b1-f890-023a682b2abf",
-            "EndTime": "2018-07-11T23:14:38.000Z",
-            "AutoScalingGroupARN": "arn:aws:autoscal****oupName/ha_ctrl",
-            "ActivityId": "c865922e-8021-d8b1-f890-023a682b2abf",
-            "StartTime": "2018-07-11T23:14:38.326Z",
-            "Service": "AWS Auto Scaling",
-            "Time": "2018-07-11T23:14:38.491Z",
-            "EC2InstanceId": "",
-            "StatusCode": "Failed",
-            "StatusMessage": "The security group \'sg-3d7bcc4d\' does not exist in VPC "
-                             "\'vpc-be5433da\'. Launching EC2 instance failed.",
-            "Details": {"Subnet ID": "subnet-497e8511","Availability Zone": "us-west-2c"},
-            "AutoScalingGroupName": "ha_ctrl",
-            "Cause": "AASDASDASD.",
-            "Event": "autoscaling:EC2_INSTANCE_LAUNCH_ERROR"},
-        u'MessageAttributes': {},
-        u'Type': u'Notification',
-        u'UnsubscribeUrl': u'https://sns.u****',
-        u'TopicArn': u'arn:aws:sns:us-west-2:094208*****:ha_ctrl',
-        u'Subject': u'Auto Scaling: failed launch for group "ha_ctrl"'
-    }}]}"""
+@moto.mock_aws
+def test_lambda_e2e(monkeypatch, httpserver: HTTPServer):
+    """Integration test using moto to simulate AWS environment
+
+    This test exercises the typical sequence of events during Controller HA:
+    1. CloudFormation creates the HA setup, and triggers the Lambda function.
+       As part of this trigger, the Lambda sets up an ASG.
+    2. ASG triggers a test notification to the Lambda function.
+    3. If the controller instance is terminated, the ASG creates a new one.
+       This triggers a notification to the Lambda function which will create and
+       setup a new controller, and trigger restore.
+    4. Finally if the user removes the HA setup, CloudFormation will trigger
+       a delete event to the Lambda function.
+    """
+    # Check that CFT triggered Lambda calls do not report any errors.
+    monkeypatch.setattr(
+        aviatrix_ha.handlers.cft.handler, "send_response", mock_send_response
+    )
+    # Stub out the AMI ID check; moto uses fixed AMI IDs.
+    monkeypatch.setattr(
+        aviatrix_ha.handlers.cft.handler, "check_ami_id", lambda x: True
+    )
+    # Stub out some boto3 calls not handled by moto
+    monkeypatch.setattr(
+        botocore.client.BaseClient, "_make_api_call", mock_make_api_call
+    )
+    # Use the local HTTP server to mock the Aviatrix API
+    monkeypatch.setattr(
+        aviatrix_ha.handlers.asg.event.client,
+        "OVERRIDE_API_ENDPOINT",
+        f"localhost:{httpserver.port}",
+    )
+
+    # Handle Aviatrix API requests
+    httpserver.expect_request(
+        "/v2/api", query_string="action=get_api_token", method="GET"
+    ).respond_with_json({"return": True, "results": {"api_token": "mytoken"}})
+    httpserver.expect_request(
+        "/v2/api",
+    ).respond_with_handler(v2_api_handler)
+
+    # Create controller resources expected to exist before HA setup
+    ec2 = boto3.client("ec2")
+    iam = boto3.client("iam")
+    lfn = boto3.client("lambda")
+    s3 = boto3.client("s3")
+
+    iam.create_instance_profile(InstanceProfileName="test-profile")
+    eip = ec2.allocate_address(Domain="vpc")
+    ec2.create_security_group(GroupName="sg-test", Description="test")
+
+    rsp = ec2.run_instances(
+        ImageId=MOTO_AMI_ID,
+        MinCount=1,
+        MaxCount=1,
+        IamInstanceProfile={"Name": "test-profile"},
+        TagSpecifications=[
+            {
+                "ResourceType": "instance",
+                "Tags": [{"Key": "Name", "Value": HA_TAG}],
+            },
+        ],
+        SecurityGroups=["sg-test"],
+        BlockDeviceMappings=[
+            {
+                "DeviceName": "/dev/sda1",
+                "Ebs": {
+                    "VolumeSize": 8,
+                    "VolumeType": "gp3",
+                    "DeleteOnTermination": True,
+                },
+            }
+        ],
+    )
+    instance_id = rsp["Instances"][0]["InstanceId"]
+    os.environ["INST_ID"] = ""
+    priv_ip = rsp["Instances"][0]["NetworkInterfaces"][0]["PrivateIpAddress"]
+    ec2.associate_address(
+        AllocationId=eip["AllocationId"],
+        InstanceId=instance_id,
+    )
+
+    # Create resources created by the CloudFormation template
+    rsp = iam.create_role(
+        RoleName="test-role",
+        AssumeRolePolicyDocument="some policy",
+        Path="/",
+    )
+    role_arn = rsp["Role"]["Arn"]
+
+    rsp = lfn.create_function(
+        FunctionName=HA_TAG + "-ha",
+        Runtime="python3.13",
+        Role=role_arn,
+        Handler="aviatrix_ha.lambda_handler",
+        Code={"ZipFile": b""},
+    )
+    lambda_arn = rsp["FunctionArn"]
+
+    s3.create_bucket(Bucket=os.environ["S3_BUCKET_BACK"])
+    s3.put_object(
+        Bucket=os.environ["S3_BUCKET_BACK"],
+        Key=f"CloudN_{priv_ip}_save_cloudx_version.txt",
+        Body=b"8.0.0-1000.1234",
+    )
+    s3.put_object(
+        Bucket=os.environ["S3_BUCKET_BACK"],
+        Key=f"CloudN_{priv_ip}_save_cloudx_config.enc",
+        Body=b"some data",
+    )
+
+    # ===== Actual test starts here =====
+    # We call _lambda_handler instead of lambda_handler so that any exceptions
+    # generated will fail the test.
+
+    # Callback from CloudFormation to create the HA setup
+    aviatrix_ha._lambda_handler(_cft_message("Create", lambda_arn), CONTEXT)
+
+    # Test notification from ASG
+    aviatrix_ha._lambda_handler(_sns_message("autoscaling:TEST_NOTIFICATION"), CONTEXT)
+
+    # Simulate instance being terminated and ASG creating a new one
+    ec2.terminate_instances(InstanceIds=[instance_id])
+    ec2.disassociate_address(PublicIp=eip["PublicIp"])
+    patch_instance_security_group(ec2, "sg-test")
+    # Notification from ASG
+    aviatrix_ha._lambda_handler(
+        _sns_message("autoscaling:EC2_INSTANCE_LAUNCH"), CONTEXT
+    )
+
+    # Callback from CloudFormation to delete the HA setup
+    aviatrix_ha._lambda_handler(_cft_message("Delete", lambda_arn), CONTEXT)
+
+
+@moto.mock_aws
+def test_lambda_function():
+    """Test the lambda function returns the controller version fetched from S3"""
+    os.environ["S3_BUCKET_REGION"] = "us-west-2"
+    s3 = boto3.client("s3")
+    os.environ["PRIV_IP"] = priv_ip = "10.20.30.40"
+
+    s3.create_bucket(Bucket=os.environ["S3_BUCKET_BACK"])
+    s3.put_object(
+        Bucket=os.environ["S3_BUCKET_BACK"],
+        Key=f"CloudN_{priv_ip}_save_cloudx_version.txt",
+        Body=b"8.0.0-1000.1234",
+    )
+    s3.put_object(
+        Bucket=os.environ["S3_BUCKET_BACK"],
+        Key=f"CloudN_{priv_ip}_save_cloudx_config.enc",
+        Body=b"some data",
+    )
+
+
+    event = {
+        "headers": {"user-agent": "pytest"},
+        "requestContext": {"http": {"method": "GET", "path": "/controller_version"}},
+    }
+    result = aviatrix_ha._lambda_handler(event, CONTEXT)
+    assert result["statusCode"] == 200
+    assert result["body"] == "8.0.0-1000.1234"

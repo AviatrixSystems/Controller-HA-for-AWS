@@ -66,9 +66,9 @@ def set_environ(client, lambda_client, controller_instanceobj, context, eip=None
             tags_stripped.append(tag)
 
     disks = []
-    for volume in controller_instanceobj.get("BlockDeviceMappings", {}):
+    for volume in controller_instanceobj.get("BlockDeviceMappings", []):
         ebs = volume.get("Ebs", {})
-        if ebs.get("Status", "detached") == "attached":
+        if ebs.get("Status", "detached") in ["attached", "in-use"]:
             vol_id = ebs.get("VolumeId")
             vol = client.describe_volumes(VolumeIds=[vol_id])["Volumes"][0]
             disks.append(
@@ -93,6 +93,15 @@ def set_environ(client, lambda_client, controller_instanceobj, context, eip=None
         "AVIATRIX_TAG": os.environ.get("AVIATRIX_TAG"),
         "API_PRIVATE_ACCESS": os.environ.get("API_PRIVATE_ACCESS", "False"),
         "PRIV_IP": priv_ip,
+        # priv_ip is used to lookup the backup. As the controller is migrated
+        # the priv_ip will change, but we need to know the original priv_ip to
+        # find the backup.
+        #
+        # This function is called once during initial CFT setup, when
+        # os.environ.get("PRIV_IP") is None, and then every time the ASG
+        # creates a new controller, when os.environ.get("PRIV_IP") will
+        # contain the previous private IP.
+        "OLD_PRIV_IP": os.environ.get("PRIV_IP") or priv_ip,
         "INST_ID": inst_id,
         "SUBNETLIST": os.environ.get("SUBNETLIST"),
         "S3_BUCKET_BACK": os.environ.get("S3_BUCKET_BACK"),
@@ -108,6 +117,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context, eip=None
         "AWS_ROLE_EC2_NAME": os.environ.get("AWS_ROLE_EC2_NAME"),
         "TARGET_GROUP_ARNS": os.environ.get("TARGET_GROUP_ARNS", "[]"),
         "DISABLE_API_TERMINATION": os.environ.get("DISABLE_API_TERMINATION", "False"),
+        "SERVICE_URL": os.environ.get("SERVICE_URL", ""),
         "EBS_OPT": ebs_opt,
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
@@ -134,6 +144,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         "AVIATRIX_TAG": os.environ.get("AVIATRIX_TAG"),
         "API_PRIVATE_ACCESS": os.environ.get("API_PRIVATE_ACCESS", "False"),
         "PRIV_IP": os.environ.get("PRIV_IP"),
+        "OLD_PRIV_IP": os.environ.get("OLD_PRIV_IP"),
         "INST_ID": os.environ.get("INST_ID"),
         "SUBNETLIST": os.environ.get("SUBNETLIST"),
         "S3_BUCKET_BACK": os.environ.get("S3_BUCKET_BACK"),
@@ -149,6 +160,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         "AWS_ROLE_EC2_NAME": os.environ.get("AWS_ROLE_EC2_NAME"),
         "TARGET_GROUP_ARNS": os.environ.get("TARGET_GROUP_ARNS", "[]"),
         "DISABLE_API_TERMINATION": os.environ.get("DISABLE_API_TERMINATION", "False"),
+        "SERVICE_URL": os.environ.get("SERVICE_URL", ""),
         "EBS_OPT": os.environ.get("EBS_OPT", "False"),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
