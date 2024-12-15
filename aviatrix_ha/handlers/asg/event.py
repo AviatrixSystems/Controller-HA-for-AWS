@@ -1,24 +1,14 @@
+from enum import Enum, auto
+import logging
 import os
-import threading
 import time
-import traceback
+from typing import Any
 
-import boto3
-
-from aviatrix_ha.api.account import create_cloud_account
-from aviatrix_ha.api.cust import set_customer_id
-from aviatrix_ha.api.enable_central_services_staging_mode import (
-    enable_central_services_staging_mode,
-)
-from aviatrix_ha.api.initial_setup import get_initial_setup_status, run_initial_setup
-from aviatrix_ha.api.login import login_to_controller
-from aviatrix_ha.api.restore import restore_backup
-from aviatrix_ha.api.upgrade_to_build import is_upgrade_to_build_supported
+from aviatrix_ha.api import client
 from aviatrix_ha.common.constants import (
-    DEV_FLAG,
     HANDLE_HA_TIMEOUT,
-    INITIAL_SETUP_DELAY,
     WAIT_DELAY,
+    TEMP_ACCOUNT_NAME,
 )
 from aviatrix_ha.csp.eip import assign_eip
 from aviatrix_ha.csp.instance import enable_t2_unlimited
@@ -26,7 +16,6 @@ from aviatrix_ha.csp.lambda_c import set_environ, update_env_dict
 from aviatrix_ha.csp.s3 import (
     MAXIMUM_BACKUP_AGE,
     is_backup_file_is_recent,
-    retrieve_controller_version,
 )
 from aviatrix_ha.csp.sg import (
     restore_security_group_access,
@@ -35,268 +24,185 @@ from aviatrix_ha.csp.sg import (
 from aviatrix_ha.errors.exceptions import AvxError
 
 
-def _try_login(controller_api_ip, password, deadline):
-    while time.time() < deadline:
-        try:
-            cid = login_to_controller(controller_api_ip, "admin", password)
-            return cid
-        except AvxError as err:
-            print(f"Login failed due to {err} trying again in {WAIT_DELAY}")
-            time.sleep(WAIT_DELAY)
-        except Exception:
-            print(
-                f"Login failed due to {traceback.format_exc()} trying again in {WAIT_DELAY}"
-            )
-            time.sleep(WAIT_DELAY)
-    return None
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
-def handle_ha_event(client, lambda_client, controller_instanceobj, context):
-    """Restores the backup by doing the following
-    1. Login to new controller
-    2. Assign the EIP to the new controller
-    3. Run initial setup to boot to specific version parsed from backup
-    4. Login again and restore the configuration"""
-    start_time = time.time()
-    old_inst_id = os.environ.get("INST_ID")
-    if old_inst_id == controller_instanceobj["InstanceId"]:
-        print("Controller is already saved. Not restoring")
-        return
-    if os.environ.get("DISABLE_API_TERMINATION") == "True":
-        try:
-            boto3.resource("ec2").Instance(  # pylint: disable=no-member
-                controller_instanceobj["InstanceId"]
-            ).modify_attribute(DisableApiTermination={"Value": True})
-            print("Updated controller instance termination protection to be true")
-        except Exception as err:
-            print(err)
-    else:
-        print("Not updating controller instance termination protection")
-    if os.environ.get("USE_EIP", "False") == "True":
-        print("Assigning EIP")
-        if not assign_eip(client, controller_instanceobj, os.environ.get("EIP")):
-            raise AvxError("Could not assign EIP")
-    else:
-        print("Not Assigning EIP")
-    eip = os.environ.get("EIP")
-    api_private_access = os.environ.get("API_PRIVATE_ACCESS")
-    new_private_ip = controller_instanceobj.get("NetworkInterfaces")[0].get(
-        "PrivateIpAddress"
-    )
-    print("New Private IP " + str(new_private_ip))
-    if api_private_access == "True":
-        controller_api_ip = new_private_ip
-        print(
-            "API Access to Controller will use Private IP : " + str(controller_api_ip)
+class HAStepResult(Enum):
+    # CONTINUE means we should contiue with the next step
+    CONTINUE = auto()
+    # FINISH means we should stop processing steps
+    FINISH = auto()
+    # Note that fatal errors are indicated by raising AvxError exceptions
+
+
+class HAEventHandler:
+    """Encapsulates the steps taken to handle a HA event"""
+
+    def __init__(
+        self, ec2_client, lambda_client, context, controller_instance: dict[str, Any]
+    ):
+        self.ec2_client = ec2_client
+        self.lambda_client = lambda_client
+        self.context = context
+        self.controller_instance = controller_instance
+        self.start_time = time.time()
+
+        self.public_ip = self.api_ip = os.environ.get("EIP")
+        self.private_ip = controller_instance["NetworkInterfaces"][0].get(
+            "PrivateIpAddress"
         )
-    else:
-        controller_api_ip = eip
-        print("API Access to Controller will use Public IP : " + str(controller_api_ip))
+        if self.api_ip is None or os.environ.get("API_PRIVATE_ACCESS") == "True":
+            self.api_ip = self.private_ip
 
-    threading.Thread(
-        target=enable_t2_unlimited, args=[client, controller_instanceobj["InstanceId"]]
-    ).start()
-    duplicate, sg_modified = temp_add_security_group_access(
-        client, controller_instanceobj, api_private_access
-    )
-    print(
-        "0.0.0.0:443/0 rule is %s present %s"
-        % (
+        if self.api_ip is None:
+            raise AvxError("Could not determine controller API endpoint IP")
+        self.client = client.ApiClient(self.api_ip)
+
+    def deadline_exceeded(self) -> bool:
+        return time.time() - self.start_time >= HANDLE_HA_TIMEOUT
+
+    def disable_api_termination_step(self) -> HAStepResult:
+        old_inst_id = os.environ.get("INST_ID")
+        if old_inst_id == self.controller_instance["InstanceId"]:
+            logger.info("Controller is already saved. Not restoring")
+            return HAStepResult.FINISH
+        if os.environ.get("DISABLE_API_TERMINATION") == "True":
+            try:
+                self.ec2_client.modify_instance_attribute(
+                    InstanceId=self.controller_instance["InstanceId"],
+                    DisableApiTermination={"Value": True},
+                )
+                logger.info(
+                    "Updated controller instance termination protection to be true"
+                )
+            except Exception as err:
+                logger.exception(err)
+                return HAStepResult.FINISH
+        else:
+            logger.info("Not updating controller instance termination protection")
+        return HAStepResult.CONTINUE
+
+    def assign_eip_step(self) -> HAStepResult:
+        if os.environ.get("USE_EIP", "False") == "True":
+            logger.info("Assigning EIP")
+            if not assign_eip(
+                self.ec2_client, self.controller_instance, os.environ.get("EIP")
+            ):
+                raise AvxError("Could not assign EIP")
+        else:
+            logger.info("Not Assigning EIP")
+        return HAStepResult.CONTINUE
+
+    def enable_t2_unlimited_step(self) -> HAStepResult:
+        enable_t2_unlimited(self.ec2_client, self.controller_instance["InstanceId"])
+        return HAStepResult.CONTINUE
+
+    def create_temp_sg_rule_step(self) -> HAStepResult:
+        duplicate, sg_modified = temp_add_security_group_access(
+            self.ec2_client,
+            self.controller_instance,
+            os.environ.get("API_PRIVATE_ACCESS"),
+        )
+        logger.info(
+            "0.0.0.0:443/0 rule is %s present %s",
             "already" if duplicate else "not",
-            "" if duplicate else ". Modified Security group %s" % sg_modified,
+            "" if duplicate else f". Modified Security group {sg_modified}",
         )
-    )
-
-    priv_ip = os.environ.get(
-        "PRIV_IP"
-    )  # This private IP belongs to older terminated instance
-    s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
-
-    if not is_backup_file_is_recent(s3_file):
-        raise AvxError(
-            f"HA event failed. Backup file does not exist or is older"
-            f" than {MAXIMUM_BACKUP_AGE}"
-        )
-
-    try:
         if not duplicate:
-            update_env_dict(lambda_client, context, {"TMP_SG_GRP": sg_modified})
-        cid = _try_login(
-            controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT
-        )
-        if cid is None or time.time() - start_time >= HANDLE_HA_TIMEOUT:
-            print(
-                "Could not login to the controller. Attempting to handle login failure"
+            update_env_dict(
+                self.lambda_client, self.context, {"TMP_SG_GRP": sg_modified}
             )
-            handle_login_failure(
-                controller_api_ip,
-                client,
-                lambda_client,
-                controller_instanceobj,
-                context,
-                eip,
-            )
-            return
+        return HAStepResult.CONTINUE
 
-        version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
-        ctrl_version, ctrl_version_with_build = retrieve_controller_version(
-            version_file
-        )
-        if is_upgrade_to_build_supported(controller_api_ip, cid):
-            ctrl_version = ctrl_version_with_build
-
-        if os.path.exists(DEV_FLAG):
-            if enable_central_services_staging_mode(cid, controller_api_ip):
-                cid = _try_login(
-                    controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT
+    def login_step(self) -> HAStepResult:
+        # Because this is a newly created instance, it may take some time for the
+        # controller to be ready to accept logins.
+        while not self.deadline_exceeded():
+            try:
+                self.client.login("admin", self.private_ip)
+                break
+            except Exception as err:
+                logging.exception(
+                    "Login failed due to %s: trying again in %s", err, WAIT_DELAY
                 )
-                if cid is None or time.time() - start_time >= HANDLE_HA_TIMEOUT:
-                    print(
-                        "Could not login to the controller. Attempting to handle login failure"
-                    )
-                    handle_login_failure(
-                        controller_api_ip,
-                        client,
-                        lambda_client,
-                        controller_instanceobj,
-                        context,
-                        eip,
-                    )
-                    return
-
-        initial_setup_complete = run_initial_setup(controller_api_ip, cid, ctrl_version)
-
-        temp_acc_name = "tempacc"
-
-        sleep = False
-        created_temp_acc = False
-        login_complete = False
-        response_json = {}
-        while time.time() - start_time < HANDLE_HA_TIMEOUT:
-            print(
-                "Maximum of "
-                + str(int(HANDLE_HA_TIMEOUT - (time.time() - start_time)))
-                + " seconds remaining"
-            )
-            if sleep:
-                print("Waiting for safe initial setup completion")
                 time.sleep(WAIT_DELAY)
-            else:
-                sleep = True
-            if not login_complete:
-                # Need to login again as initial setup invalidates cid after waiting
-                print("Logging in again")
-                try:
-                    cid = login_to_controller(
-                        controller_api_ip, "admin", new_private_ip
-                    )
-                except (
-                    AvxError
-                ) as err:  # It might not succeed since apache2 could restart
-                    print(f"Cannot connect to the controller. {err}")
-                    sleep = False
-                    time.sleep(INITIAL_SETUP_DELAY)
-                    continue
-                else:
-                    login_complete = True
-            if not initial_setup_complete:
-                response_json = get_initial_setup_status(controller_api_ip, cid)
-                print("Initial setup status %s" % response_json)
-                if response_json.get("return", False) is True:
-                    initial_setup_complete = True
-            if initial_setup_complete and not created_temp_acc:
-                response_json = create_cloud_account(
-                    cid, controller_api_ip, temp_acc_name
-                )
-                print(response_json)
-                if response_json.get("return", False) is True:
-                    created_temp_acc = True
-                elif "already exists" in response_json.get("reason", ""):
-                    created_temp_acc = True
-            if created_temp_acc and initial_setup_complete:
-                if os.environ.get(
-                    "CUSTOMER_ID"
-                ):  # Support for license migration scenario
-                    set_customer_id(cid, controller_api_ip)
-                response_json = restore_backup(
-                    cid, controller_api_ip, s3_file, temp_acc_name
-                )
-                print(response_json)
-            if response_json.get("return", False) is True and created_temp_acc:
-                # If restore succeeded, update private IP to that of the new
-                #  instance now.
-                print("Successfully restored backup. Updating lambda configuration")
-                set_environ(client, lambda_client, controller_instanceobj, context, eip)
-                print("Updated lambda configuration")
-                print("Controller HA event has been successfully handled")
+        return HAStepResult.CONTINUE
+
+    def initial_setup_step(self) -> HAStepResult:
+        logger.info("Running initial setup")
+        self.client.initial_setup()
+        return HAStepResult.CONTINUE
+
+    def create_temp_account_step(self) -> HAStepResult:
+        logger.info("Creating temporary account for config restore")
+        response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
+        if response_json.get("return", False) is not True:
+            raise AvxError("Could not create temp account")
+        return HAStepResult.CONTINUE
+
+    def restore_backup_step(self) -> HAStepResult:
+        priv_ip = os.environ.get(
+            "PRIV_IP"
+        )  # This private IP belongs to older terminated instance
+        s3_file = f"CloudN_{priv_ip}_save_cloudx_config.enc"
+        logger.info("Restoring backup file %s", s3_file)
+        if not is_backup_file_is_recent(s3_file):
+            raise AvxError(
+                f"HA event failed. Backup file {s3_file} does not exist or is older"
+                f" than {MAXIMUM_BACKUP_AGE}"
+            )
+
+        response_json = self.client.restore_backup(s3_file, TEMP_ACCOUNT_NAME)
+        if response_json.get("return", False) is not True:
+            raise AvxError("Could not restore backup")
+        return HAStepResult.CONTINUE
+
+    def update_lambda_env_step(self) -> HAStepResult:
+        set_environ(
+            self.ec2_client,
+            self.lambda_client,
+            self.controller_instance,
+            self.context,
+            self.public_ip,
+        )
+        return HAStepResult.CONTINUE
+
+    def remove_temp_sg_rule_step(self) -> HAStepResult:
+        if not os.environ.get("TMP_SG_GRP"):
+            return HAStepResult.CONTINUE
+        restore_security_group_access(self.ec2_client, os.environ.get("TMP_SG_GRP"))
+        update_env_dict(self.lambda_client, self.context, {"TMP_SG_GRP": ""})
+        return HAStepResult.CONTINUE
+
+    def run(self):
+        steps = [
+            self.disable_api_termination_step,
+            self.assign_eip_step,
+            self.enable_t2_unlimited_step,
+            self.create_temp_sg_rule_step,
+            self.login_step,
+            self.initial_setup_step,
+            self.create_temp_account_step,
+            self.restore_backup_step,
+            self.update_lambda_env_step,
+            self.remove_temp_sg_rule_step,
+        ]
+        for step in steps:
+            if self.deadline_exceeded():
+                raise AvxError("Deadline exceeded while handling HA event")
+            result = step()
+            if result == HAStepResult.FINISH:
                 return
-            if response_json.get("reason", "") == "account_password required.":
-                print("API is not ready yet, requires account_password")
-            elif response_json.get("reason", "") == "valid action required":
-                print("API is not ready yet")
-            elif (
-                response_json.get("reason", "") == "CID is invalid or expired."
-                or "Invalid session. Please login again."
-                in response_json.get("reason", "")
-                or f"Session {cid} not found" in response_json.get("reason", "")
-                or f"Session {cid} expired" in response_json.get("reason", "")
-            ):
-                print("Service abrupty restarted")
-                sleep = False
-                try:
-                    cid = login_to_controller(
-                        controller_api_ip, "admin", new_private_ip
-                    )
-                except AvxError:
-                    pass
-            elif response_json.get("reason", "") == "not run":
-                print("Initial setup not complete..waiting")
-                time.sleep(INITIAL_SETUP_DELAY)
-                sleep = False
-            elif "Remote end closed connection without response" in response_json.get(
-                "reason", ""
-            ):
-                print("Remote side closed the connection..waiting")
-                time.sleep(INITIAL_SETUP_DELAY)
-                sleep = False
-            elif "Failed to establish a new connection" in response_json.get(
-                "reason", ""
-            ) or "Max retries exceeded with url" in response_json.get("reason", ""):
-                print("Failed to connect to the controller")
-            else:
-                print(
-                    "Restoring backup failed due to "
-                    + str(response_json.get("reason", ""))
-                )
-                return
-        raise AvxError("Restore failed, did not update lambda config")
-    finally:
-        if not duplicate:
-            print("Reverting sg %s" % sg_modified)
-            update_env_dict(lambda_client, context, {"TMP_SG_GRP": ""})
-            restore_security_group_access(client, sg_modified)
 
 
-def handle_login_failure(
-    priv_ip, client, lambda_client, controller_instanceobj, context, eip
-):
-    """Handle login failure through private IP"""
-    print("Checking for backup file")
-    new_version_file = "CloudN_" + priv_ip + "_save_cloudx_version.txt"
-    try:
-        retrieve_controller_version(new_version_file)
-    except Exception as err:
-        print(str(err))
-        print(
-            "Could not retrieve new version file. Stopping instance. ASG will terminate and "
-            "launch a new instance"
-        )
-        inst_id = controller_instanceobj["InstanceId"]
-        print("Stopping %s" % inst_id)
-        client.stop_instances(InstanceIds=[inst_id])
-    else:
-        print(
-            "Successfully retrieved version. Previous restore operation had succeeded. "
-            "Previous lambda may have exceeded 5 min. Updating lambda config"
-        )
-        set_environ(client, lambda_client, controller_instanceobj, context, eip)
+def handle_ha_event(ec2_client, lambda_client, controller_instanceobj, context):
+    """handle_ha_event() is called in response to the ASG creating a new controller instance.
+
+    The function will run through a set of steps to restore the controller to a previous state.
+
+    Care has to be taken for each step to be idempotent, so that if the function
+    is interrupted, it can be safely re-run without causing problems.
+    """
+    handler = HAEventHandler(ec2_client, lambda_client, context, controller_instanceobj)
+    handler.run()

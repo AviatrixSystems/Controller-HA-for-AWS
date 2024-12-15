@@ -28,6 +28,7 @@ def restore_security_group_access(client, sg_id):
 
 def temp_add_security_group_access(client, controller_instanceobj, api_private_access):
     """Temporarily add 0.0.0.0/0 rule in one security group"""
+    print(f"Controller SecurityGroups: {controller_instanceobj['SecurityGroups']}")
     sgs = [sg_["GroupId"] for sg_ in controller_instanceobj["SecurityGroups"]]
     if api_private_access == "True":
         return True, sgs[0]

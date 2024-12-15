@@ -71,6 +71,7 @@ def _handle_cloud_formation_request(
         try:
             os.environ["TOPIC_ARN"] = "N/A"
             os.environ["S3_BUCKET_REGION"] = ""
+            os.environ["SERVICE_URL"] = event["ResourceProperties"]["ServiceURL"]
             set_environ(client, lambda_client, controller_instanceobj, context)
             print("Environment variables have been set.")
         except Exception as err:
