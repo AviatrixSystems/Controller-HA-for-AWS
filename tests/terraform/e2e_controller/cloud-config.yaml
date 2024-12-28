@@ -1,0 +1,7 @@
+#cloud-config
+
+avx-controller:
+  environment: staging
+  avx-controller-version: ${software_version}
+  extra-bootstrap-args:
+    use-containerized-gateway: ${use_containerized_gateway}

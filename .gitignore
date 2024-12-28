@@ -1,2 +1,4 @@
 .idea
 *.pyc
+.envrc
+tf_resources.json

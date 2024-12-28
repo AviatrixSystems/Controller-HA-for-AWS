@@ -25,6 +25,7 @@ types-pyyaml = "^6.0.12.20241221"
 trustme = "^1.2.0"
 moto = {extras = ["ec2", "lambda", "sts"], version = "^5.0.22"}
 cfn-lint = "^1.22.1"
+pytest-terraform = "^0.7.0"
 
 [tool.isort]
 profile = "black"
