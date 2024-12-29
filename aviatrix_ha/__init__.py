@@ -2,6 +2,7 @@
 
 # pylint: disable=too-many-lines,too-many-locals,too-many-branches,too-many-return-statements
 # pylint: disable=too-many-statements,too-many-arguments,broad-except
+import enum
 import os
 import traceback
 
@@ -23,6 +24,15 @@ urllib3.disable_warnings(InsecureRequestWarning)
 print("Loading function")
 
 
+class EventType(enum.Enum):
+    """Enum for event types"""
+
+    CFT = "CFT"
+    SNS = "SNS"
+    FUNCTION = "Function"
+    UNKNOWN = "Unknown"
+
+
 def lambda_handler(event, context):
     """Entry point of the lambda script"""
     try:
@@ -34,6 +44,23 @@ def lambda_handler(event, context):
         print("Lambda function failed due to " + str(err))
 
 
+def _get_event_type(event) -> EventType:
+    """Get the event type from the event"""
+    if "StackId" in event:
+        return EventType.CFT
+
+    try:
+        if event["Records"][0]["EventSource"] == "aws:sns":
+            return EventType.SNS
+    except (AttributeError, IndexError, KeyError, TypeError):
+        pass
+
+    if "headers" in event and "requestContext" in event:
+        return EventType.FUNCTION
+
+    return EventType.UNKNOWN
+
+
 def _lambda_handler(event, context):
     """Entry point of the lambda script without exception handling
     This lambda function will serve muliple kinds of requests:
@@ -41,30 +68,8 @@ def _lambda_handler(event, context):
     2) sns_event - Request from sns to attach elastic ip to new instance
        created after controller failover.
     3) function_request - request to the function url
-     """
-    # scheduled_event = False
-    sns_event = False
-    print(f"Version: {VERSION} Event: {event}")
-    try:
-        cf_request = event["StackId"]
-        print("From CFT")
-    except (KeyError, AttributeError, TypeError):
-        cf_request = None
-        print("Not from CFT")
-    try:
-        sns_event = event["Records"][0]["EventSource"] == "aws:sns"
-        print("From SNS Event")
-    except (AttributeError, IndexError, KeyError, TypeError):
-        pass
-    try:
-        function_headers = event["headers"]
-        function_request = event["requestContext"]
-        print("From Function Request")
-    except (KeyError, AttributeError):
-        function_headers = None
-        function_request = None
-        print("Not from Function Request")
-
+    """
+    event_type = _get_event_type(event)
     client = boto3.client("ec2")
     lambda_client = boto3.client("lambda")
 
@@ -80,7 +85,7 @@ def _lambda_handler(event, context):
         client, instance_name, inst_id
     )
 
-    if cf_request:
+    if event_type == EventType.CFT:
         return handle_cft(
             describe_err,
             event,
@@ -90,11 +95,11 @@ def _lambda_handler(event, context):
             controller_instanceobj,
             instance_name,
         )
-    elif sns_event:
+    elif event_type == EventType.SNS:
         return handle_sns_event(
             describe_err, event, client, lambda_client, controller_instanceobj, context
         )
-    elif function_headers is not None and function_request is not None :
+    elif event_type == EventType.FUNCTION:
         return handle_function_event(event, context)
     else:
         print("Unknown source. Not from CFT or SNS")
