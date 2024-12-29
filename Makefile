@@ -37,3 +37,7 @@ pylint:
 .PHONY: black
 black:
 	poetry run black aviatrix_ha
+
+.PHONY: mypy
+mypy:
+	poetry run mypy aviatrix_ha
