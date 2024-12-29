@@ -10,7 +10,7 @@ INITIAL_SETUP_API_WAIT = 20
 def get_initial_setup_status(ip_addr, cid):
     """Get status of the initial setup completion execution"""
     print("Checking initial setup")
-    base_url = "https://" + ip_addr + "/v1/api"
+    base_url = "https://" + ip_addr + "/v2/api"
     post_data = {"CID": cid, "action": "initial_setup", "subaction": "check"}
     try:
         response = requests.post(base_url, data=post_data, verify=False)
@@ -33,7 +33,7 @@ def run_initial_setup(ip_addr, cid, ctrl_version):
     }
     print("Trying to run initial setup %s\n" % str(post_data))
     post_data["CID"] = cid
-    base_url = "https://" + ip_addr + "/v1/api"
+    base_url = "https://" + ip_addr + "/v2/api"
     try:
         response = requests.post(base_url, data=post_data, verify=False)
     except requests.exceptions.ConnectionError as err:

@@ -18,9 +18,9 @@ def get_api_token(ip_addr):
         raise AvxError(str(err)) from err
     buf = data.content
     if data.status_code not in [200, 404]:
-        err = f"Controller at {ip_addr} is not ready. Status code {data.status_code}  {buf}"
-        print(err)
-        raise AvxError(err)
+        error = f"Controller at {ip_addr} is not ready. Status code {data.status_code}  {buf}"
+        print(error)
+        raise AvxError(error)
     try:
         out = json.loads(buf)
     except ValueError:
@@ -39,14 +39,14 @@ def get_api_token(ip_addr):
     if api_return is False:
         try:
             reason = out["reason"]
-        except (KeyError, AttributeError, TypeError) as err:
+        except (KeyError, AttributeError, TypeError):
             print(f"Couldn't get reason. Response is {out}")
             print("Did not obtain token")
             return None
         if reason == "RequestRefused":
-            err = f"Controller at {ip_addr} is not ready. Status code {reason} {out}"
-            print(err)
-            raise AvxError(err)
+            error = f"Controller at {ip_addr} is not ready. Status code {reason} {out}"
+            print(error)
+            raise AvxError(error)
         print(
             f"Getting token failed due to {reason}. Token may not be supported."
             f"Response is {out}"
@@ -68,7 +68,7 @@ def login_to_controller(ip_addr, username, pwd):
     """Logs into the controller and returns the cid"""
     token = get_api_token(ip_addr)
     headers = {}
-    base_url = "https://" + ip_addr + "/v1/api"
+    base_url = "https://" + ip_addr + "/v2/api"
     if token:
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
