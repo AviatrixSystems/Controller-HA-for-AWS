@@ -2,6 +2,7 @@
 
 # pylint: disable=too-many-lines,too-many-locals,too-many-branches,too-many-return-statements
 # pylint: disable=too-many-statements,too-many-arguments,broad-except
+import enum
 import os
 import traceback
 
@@ -15,6 +16,7 @@ from aviatrix_ha.csp.sg import restore_security_group_access
 from aviatrix_ha.errors.exceptions import AvxError
 from aviatrix_ha.handlers.asg.handler import handle_sns_event
 from aviatrix_ha.handlers.cft.handler import handle_cft
+from aviatrix_ha.handlers.function.handler import handle_function_event
 from aviatrix_ha.version import VERSION
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -22,10 +24,19 @@ urllib3.disable_warnings(InsecureRequestWarning)
 print("Loading function")
 
 
+class EventType(enum.Enum):
+    """Enum for event types"""
+
+    CFT = "CFT"
+    SNS = "SNS"
+    FUNCTION = "Function"
+    UNKNOWN = "Unknown"
+
+
 def lambda_handler(event, context):
     """Entry point of the lambda script"""
     try:
-        _lambda_handler(event, context)
+        return _lambda_handler(event, context)
     except AvxError as err:
         print("Operation failed due to: " + str(err))
     except Exception as err:  # pylint: disable=broad-except
@@ -33,44 +44,34 @@ def lambda_handler(event, context):
         print("Lambda function failed due to " + str(err))
 
 
-def _lambda_handler(event, context):
-    """Entry point of the lambda script without exception hadling
-    This lambda function will serve 2 kinds of requests:
-    one time request from CFT - Request to setup HA (setup_ha method)
-     made by Cloud formation template.
-    sns_event - Request from sns to attach elastic ip to new instance
-     created after controller failover."""
-    # scheduled_event = False
-    sns_event = False
-    print(f"Version: {VERSION} Event: {event}")
+def _get_event_type(event) -> EventType:
+    """Get the event type from the event"""
+    if "StackId" in event:
+        return EventType.CFT
+
     try:
-        cf_request = event["StackId"]
-        print("From CFT")
-    except (KeyError, AttributeError, TypeError):
-        cf_request = None
-        print("Not from CFT")
-    try:
-        sns_event = event["Records"][0]["EventSource"] == "aws:sns"
-        print("From SNS Event")
+        if event["Records"][0]["EventSource"] == "aws:sns":
+            return EventType.SNS
     except (AttributeError, IndexError, KeyError, TypeError):
         pass
-    if os.environ.get("TESTPY") == "True":
-        print("Testing")
-        client = boto3.client(
-            "ec2",
-            region_name=os.environ["AWS_TEST_REGION"],
-            aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
-            aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"],
-        )
-        lambda_client = boto3.client(
-            "lambda",
-            region_name=os.environ["AWS_TEST_REGION"],
-            aws_access_key_id=os.environ["AWS_ACCESS_KEY_BACK"],
-            aws_secret_access_key=os.environ["AWS_SECRET_KEY_BACK"],
-        )
-    else:
-        client = boto3.client("ec2")
-        lambda_client = boto3.client("lambda")
+
+    if "headers" in event and "requestContext" in event:
+        return EventType.FUNCTION
+
+    return EventType.UNKNOWN
+
+
+def _lambda_handler(event, context):
+    """Entry point of the lambda script without exception handling
+    This lambda function will serve muliple kinds of requests:
+    1) request from CFT - Request to setup HA (setup_ha method) made by CloudFormation template.
+    2) sns_event - Request from sns to attach elastic ip to new instance
+       created after controller failover.
+    3) function_request - request to the function url
+    """
+    event_type = _get_event_type(event)
+    client = boto3.client("ec2")
+    lambda_client = boto3.client("lambda")
 
     tmp_sg = os.environ.get("TMP_SG_GRP", "")
     if tmp_sg:
@@ -84,8 +85,8 @@ def _lambda_handler(event, context):
         client, instance_name, inst_id
     )
 
-    if cf_request:
-        handle_cft(
+    if event_type == EventType.CFT:
+        return handle_cft(
             describe_err,
             event,
             context,
@@ -94,9 +95,12 @@ def _lambda_handler(event, context):
             controller_instanceobj,
             instance_name,
         )
-    elif sns_event:
-        handle_sns_event(
+    elif event_type == EventType.SNS:
+        return handle_sns_event(
             describe_err, event, client, lambda_client, controller_instanceobj, context
         )
+    elif event_type == EventType.FUNCTION:
+        return handle_function_event(event, context)
     else:
         print("Unknown source. Not from CFT or SNS")
+        return False

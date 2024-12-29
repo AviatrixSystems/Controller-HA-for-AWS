@@ -38,7 +38,7 @@ def retrieve_controller_version(version_file):
         ctrl_version = ".".join(ver_list[:-1])
         ctrl_version_with_build = ".".join(ver_list)
     except (KeyboardInterrupt, IndexError, ValueError) as err:
-        raise AvxError("Could not decode version") from err
+        raise AvxError(f"Could not decode version {buf}") from err
     print(
         "Parsed version sucessfully {} and {}".format(
             ctrl_version, ctrl_version_with_build

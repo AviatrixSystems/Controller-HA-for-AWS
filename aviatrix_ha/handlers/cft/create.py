@@ -1,12 +1,14 @@
+import base64
 import json
 import os
 import time
-import traceback
 import uuid
 
 import boto3
 import botocore
+import yaml
 
+from aviatrix_ha.common.constants import DEV_FLAG
 from aviatrix_ha.csp.instance import is_controller_termination_protected
 from aviatrix_ha.csp.keypair import validate_keypair
 from aviatrix_ha.csp.lambda_c import update_env_dict
@@ -110,6 +112,13 @@ def setup_ha(
     for tag in tags:
         tag_cp.append(dict(tag))
         tag_cp[-1].pop("PropagateAtLaunch", None)
+    cloud_init = {
+        "avx-controller": {
+            "environment": "production" if not os.path.exists(DEV_FLAG) else "staging",
+            "avx-controller-version-url": f"{os.environ.get('SERVICE_URL')}controller_version",
+        }
+    }
+    cloud_init = f"#cloud-config\n\n{yaml.dump(cloud_init)}\n".encode("utf-8")
     lt_data = {
         "EbsOptimized": ebz_optimized,
         "IamInstanceProfile": {"Arn": iam_arn},
@@ -121,6 +130,7 @@ def setup_ha(
         "DisableApiTermination": disable_api_term,
         "TagSpecifications": [{"ResourceType": "instance", "Tags": tag_cp}],
         "SecurityGroupIds": sg_list,
+        "UserData": base64.b64encode(cloud_init).decode("utf-8"),
         # # Unused and unsupported parameters
         # Placement, (az info) # RamDiskId # 'NetworkInterfaces' # 'KernelId':  '',
         # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
@@ -179,9 +189,11 @@ def setup_ha(
         .get("Configuration")
         .get("FunctionArn")
     )
+    print(f"Subscribing to {sns_topic_arn}")
     sns_client.subscribe(
         TopicArn=sns_topic_arn, Protocol="lambda", Endpoint=lambda_fn_arn
     ).get("SubscriptionArn")
+    print("Setting up notification emails")
     if os.environ.get("NOTIF_EMAIL"):
         try:
             sns_client.subscribe(
@@ -193,6 +205,7 @@ def setup_ha(
             print("Could not add email notification %s" % str(err))
     else:
         print("Not adding email notification")
+    print("Configuring lambda permissions")
     lambda_client.add_permission(
         FunctionName=context.function_name,
         StatementId=str(uuid.uuid4()),
