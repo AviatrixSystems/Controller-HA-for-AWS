@@ -155,7 +155,7 @@ class HAEventHandler:
 
         response_json = self.client.restore_backup(s3_file, TEMP_ACCOUNT_NAME)
         if response_json.get("return", False) is not True:
-            raise AvxError("Could not restore backup")
+            raise AvxError(f"Could not restore backup: {response_json}")
         return HAStepResult.CONTINUE
 
     def update_lambda_env_step(self) -> HAStepResult:
