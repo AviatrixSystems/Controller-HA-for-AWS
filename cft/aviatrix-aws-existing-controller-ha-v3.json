@@ -214,6 +214,15 @@
             "TargetFunctionArn" : { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] }
         }
     },
+    "AviatrixLambdaUrlPermissions": {
+        "Type": "AWS::Lambda::Permission",
+        "Properties": {
+            "Action": "lambda:InvokeFunctionUrl",
+            "FunctionName": { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] },
+            "FunctionUrlAuthType": "NONE",
+            "Principal": "*"
+        }
+    },
     "SetupHA": {
       "Type": "Custom::SetupHA",
       "Properties": {
