@@ -3,7 +3,7 @@ import traceback
 
 from aviatrix_ha.api.external.ami import check_ami_id
 from aviatrix_ha.csp.eip import is_ip_elastic
-from aviatrix_ha.csp.instance import verify_iam
+from aviatrix_ha.csp.instance import get_user_data, verify_iam
 from aviatrix_ha.csp.lambda_c import set_environ, update_env_dict
 from aviatrix_ha.csp.s3 import (
     MAXIMUM_BACKUP_AGE,
@@ -21,7 +21,7 @@ def handle_cft(
     describe_err,
     event,
     context,
-    client,
+    ec2_client,
     lambda_client,
     controller_instanceobj,
     instance_name,
@@ -43,7 +43,12 @@ def handle_cft(
 
     try:
         response_status, err_reason = _handle_cloud_formation_request(
-            client, event, lambda_client, controller_instanceobj, context, instance_name
+            ec2_client,
+            event,
+            lambda_client,
+            controller_instanceobj,
+            context,
+            instance_name,
         )
     except AvxError as err:
         err_reason = str(err)
@@ -62,7 +67,7 @@ def handle_cft(
 
 
 def _handle_cloud_formation_request(
-    client, event, lambda_client, controller_instanceobj, context, instance_name
+    ec2_client, event, lambda_client, controller_instanceobj, context, instance_name
 ):
     """Handle Requests from cloud formation"""
     response_status = "SUCCESS"
@@ -72,7 +77,7 @@ def _handle_cloud_formation_request(
             os.environ["TOPIC_ARN"] = "N/A"
             os.environ["S3_BUCKET_REGION"] = ""
             os.environ["SERVICE_URL"] = event["ResourceProperties"]["ServiceURL"]
-            set_environ(client, lambda_client, controller_instanceobj, context)
+            set_environ(ec2_client, lambda_client, controller_instanceobj, context)
             print("Environment variables have been set.")
         except Exception as err:
             err_reason = "Failed to setup environment variables %s" % str(err)
@@ -97,7 +102,7 @@ def _handle_cloud_formation_request(
         if not is_backup_file_is_recent(backup_file):
             return "FAILED", f"Backup file is older than {MAXIMUM_BACKUP_AGE}"
         if os.environ.get("EIP"):
-            if not is_ip_elastic(client, os.environ.get("EIP")):
+            if not is_ip_elastic(ec2_client, os.environ.get("EIP")):
                 # Public IP but no Elastic IP
                 if (
                     not os.environ.get("API_PRIVATE_ACCESS", "False") == "True"
@@ -126,8 +131,9 @@ def _handle_cloud_formation_request(
         inst_id = controller_instanceobj["InstanceId"]
         inst_type = controller_instanceobj["InstanceType"]
         key_name = controller_instanceobj.get("KeyName", "")
+        user_data = get_user_data(ec2_client, controller_instanceobj)
         sgs = [sg_["GroupId"] for sg_ in controller_instanceobj["SecurityGroups"]]
-        setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context)
+        setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context, user_data)
 
     elif event["RequestType"] == "Delete":
         try:

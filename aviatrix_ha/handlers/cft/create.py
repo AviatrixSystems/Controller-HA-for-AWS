@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import os
 import time
 import uuid
@@ -17,8 +18,37 @@ from aviatrix_ha.csp.target_group import get_target_group_arns
 from aviatrix_ha.errors.exceptions import AvxError
 
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
+def _update_user_data(user_data: str) -> str:
+    if not user_data or not user_data.startswith("#cloud-config\n"):
+        return user_data
+
+    try:
+        data = yaml.safe_load(user_data)
+    except yaml.YAMLError as exc:
+        logger.exception("Failed to parse user data [%s]: %s", user_data, exc)
+        return user_data
+
+    if "avx-controller" in data:
+        data["avx-controller"][
+            "avx-controller-version-url"
+        ] = f"{os.environ.get('SERVICE_URL')}controller_version"
+
+    return f"#cloud-config\n{yaml.dump(data)}"
+
+
 def setup_ha(
-    ami_id, inst_type, inst_id, key_name, sg_list, context, attach_instance=True
+    ami_id,
+    inst_type,
+    inst_id,
+    key_name,
+    sg_list,
+    context,
+    user_data,
+    attach_instance=True,
 ):
     """Setup HA"""
     print(
@@ -112,13 +142,7 @@ def setup_ha(
     for tag in tags:
         tag_cp.append(dict(tag))
         tag_cp[-1].pop("PropagateAtLaunch", None)
-    cloud_init = {
-        "avx-controller": {
-            "environment": "production" if not os.path.exists(DEV_FLAG) else "staging",
-            "avx-controller-version-url": f"{os.environ.get('SERVICE_URL')}controller_version",
-        }
-    }
-    cloud_init = f"#cloud-config\n\n{yaml.dump(cloud_init)}\n".encode("utf-8")
+    cloud_init = _update_user_data(user_data).encode("utf-8")
     lt_data = {
         "EbsOptimized": ebz_optimized,
         "IamInstanceProfile": {"Arn": iam_arn},

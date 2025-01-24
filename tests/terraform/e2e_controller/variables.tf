@@ -50,3 +50,24 @@ variable "setup_copilot" {
   type        = bool
   default     = false
 }
+
+# terraform-docs-ignore
+variable "environment" {
+  description = "Determines the deployment environment. For internal use only."
+  type        = string
+  default     = "prod"
+  nullable    = false
+
+  validation {
+    condition     = contains(["prod", "staging"], var.environment)
+    error_message = "The environment must be either 'prod' or 'staging'."
+  }
+}
+
+# terraform-docs-ignore
+variable "registry_auth_token" {
+  description = "The token used to authenticate to the controller artifact registry. For internal use only."
+  type        = string
+  default     = ""
+  nullable    = false
+}

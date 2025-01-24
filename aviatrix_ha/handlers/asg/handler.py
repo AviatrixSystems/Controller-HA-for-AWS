@@ -10,7 +10,7 @@ from aviatrix_ha.handlers.cft.handler import delete_resources, setup_ha
 def handle_sns_event(
     describe_err, event, client, lambda_client, controller_instanceobj, context
 ):
-    """Handle an autoscaling group evevnt which is sent by SNS"""
+    """Handle an autoscaling group event which is sent by SNS"""
     if describe_err:
         try:
             sns_msg_event = (json.loads(event["Records"][0]["Sns"]["Message"]))["Event"]
@@ -42,7 +42,15 @@ def handle_sns_event(
         ami_id = os.environ.get("AMI_ID")
         inst_type = os.environ.get("INST_TYPE")
         key_name = os.environ.get("KEY_NAME")
+        user_data = os.environ.get("USER_DATA")
         delete_resources(None, detach_instances=False)
         setup_ha(
-            ami_id, inst_type, None, key_name, [sg_id], context, attach_instance=False
+            ami_id,
+            inst_type,
+            None,
+            key_name,
+            [sg_id],
+            context,
+            user_data,
+            attach_instance=False,
         )

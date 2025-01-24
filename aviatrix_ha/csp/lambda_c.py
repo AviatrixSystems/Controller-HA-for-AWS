@@ -51,6 +51,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context, eip=None
     ctrl_subnet = controller_instanceobj["SubnetId"]
     priv_ip = controller_instanceobj.get("NetworkInterfaces")[0].get("PrivateIpAddress")
     iam_arn = controller_instanceobj.get("IamInstanceProfile", {}).get("Arn", "")
+    user_data = controller_instanceobj.get("UserData", "")
     mon_bool = (
         controller_instanceobj.get("Monitoring", {}).get("State", "disabled")
         != "disabled"
@@ -119,6 +120,7 @@ def set_environ(client, lambda_client, controller_instanceobj, context, eip=None
         "DISABLE_API_TERMINATION": os.environ.get("DISABLE_API_TERMINATION", "False"),
         "SERVICE_URL": os.environ.get("SERVICE_URL", ""),
         "EBS_OPT": ebs_opt,
+        "USER_DATA": user_data,
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
@@ -162,6 +164,7 @@ def update_env_dict(lambda_client, context, replace_dict):
         "DISABLE_API_TERMINATION": os.environ.get("DISABLE_API_TERMINATION", "False"),
         "SERVICE_URL": os.environ.get("SERVICE_URL", ""),
         "EBS_OPT": os.environ.get("EBS_OPT", "False"),
+        "USER_DATA": os.environ.get("USER_DATA", ""),
         # 'AVIATRIX_USER_BACK': os.environ.get('AVIATRIX_USER_BACK'),
         # 'AVIATRIX_PASS_BACK': os.environ.get('AVIATRIX_PASS_BACK'),
     }
