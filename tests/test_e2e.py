@@ -5,6 +5,8 @@ Prerequisites for running the test:
     TF_VAR_customer_id: Customer ID for the Aviatrix controller
 2. If testing a non-released version of the module, set the following environment variables:
     TF_VAR_controller_version: The version of the controller to deploy
+    TF_VAR_environment=staging
+    TF_VAR_registry_auth_token=<staging auth token>
 3. Build the dev version of the CloudFormation script, and deploy the dev lambda:
     make push_dev
 

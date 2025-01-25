@@ -8,6 +8,8 @@ resource "terracurl_request" "login" {
   name            = "login"
   url             = "https://${module.my_controller.controller_public_ip}/v2/api"
   method          = "POST"
+  destroy_url     = "https://checkip.amazonaws.com"
+  destroy_method  = "GET"
   skip_tls_verify = true
   request_body = jsonencode({
     "action" : "login",
@@ -44,6 +46,8 @@ resource "terracurl_request" "setup_account_profile" {
   name            = "setup_account_profile"
   url             = "https://${module.my_controller.controller_public_ip}/v2/api"
   method          = "POST"
+  destroy_url     = "https://checkip.amazonaws.com"
+  destroy_method  = "GET"
   skip_tls_verify = true
   request_body = jsonencode({
     "action" : "setup_account_profile",
@@ -83,6 +87,8 @@ resource "terracurl_request" "enable_cloudn_backup_config" {
   name            = "enable_cloudn_backup_config"
   url             = "https://${module.my_controller.controller_public_ip}/v2/api"
   method          = "POST"
+  destroy_url     = "https://checkip.amazonaws.com"
+  destroy_method  = "GET"
   skip_tls_verify = true
   request_body = jsonencode({
     "action" : "enable_cloudn_backup_config",

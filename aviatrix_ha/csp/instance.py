@@ -1,5 +1,7 @@
 """ CSP APis related to instances"""
 
+import base64
+
 import boto3
 import botocore
 
@@ -35,6 +37,7 @@ def get_controller_instance(ec2_client, instance_name, inst_id):
             str(err),
         )
         print(describe_err)
+
     return describe_err, controller_instanceobj
 
 
@@ -76,3 +79,15 @@ def verify_iam(controller_instanceobj):
     if not iam_arn:
         return False
     return True
+
+
+def get_user_data(ec2_client, controller_instanceobj) -> str:
+    try:
+        user_data = ec2_client.describe_instance_attribute(
+            InstanceId=controller_instanceobj["InstanceId"], Attribute="userData"
+        )["UserData"]["Value"]
+        user_data = base64.b64decode(user_data).decode("utf-8")
+        return user_data
+    except Exception as err:
+        print(str(err))
+    return ""

@@ -1,6 +1,7 @@
 """ Test Module to test restore functionality"""
 
 import argparse
+import base64
 import json
 import os
 import ssl
@@ -218,6 +219,13 @@ def test_lambda_e2e(monkeypatch, httpserver: HTTPServer):
             },
         ],
         SecurityGroups=["sg-test"],
+        UserData="""#cloud-config
+avx-controller:
+    environment: prod
+    extra-bootstrap-args:
+        image-registry: registry-release.prod.sre.aviatrix.com
+        image-registry-auth: some-auth-token
+""",
         BlockDeviceMappings=[
             {
                 "DeviceName": "/dev/sda1",
@@ -285,6 +293,21 @@ def test_lambda_e2e(monkeypatch, httpserver: HTTPServer):
         _sns_message("autoscaling:EC2_INSTANCE_LAUNCH"), CONTEXT
     )
 
+    # Verify a new instance was launched
+    rsp = ec2.describe_instances(
+        Filters=[
+            {"Name": "instance-state-name", "Values": ["running"]},
+            {"Name": "tag:Name", "Values": [HA_TAG]},
+        ]
+    )
+    instance_id = rsp["Reservations"][0]["Instances"][0]["InstanceId"]
+    rsp = ec2.describe_instance_attribute(InstanceId=instance_id, Attribute="userData") 
+    user_data = base64.b64decode(rsp["UserData"]["Value"]).decode("utf-8")
+    print(f"User data from new instance: {user_data}")
+    assert "#cloud-config\n" in user_data
+    assert "avx-controller:" in user_data
+    assert "avx-controller-version-url" in user_data
+
     # Callback from CloudFormation to delete the HA setup
     aviatrix_ha._lambda_handler(_cft_message("Delete", lambda_arn), CONTEXT)
 
@@ -307,7 +330,6 @@ def test_lambda_function():
         Key=f"CloudN_{priv_ip}_save_cloudx_config.enc",
         Body=b"some data",
     )
-
 
     event = {
         "headers": {"user-agent": "pytest"},
