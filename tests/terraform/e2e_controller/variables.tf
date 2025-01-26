@@ -12,7 +12,7 @@ variable "customer_id" {
 variable "incoming_ssl_cidrs" {
   description = "List of CIDRs to allow incoming connections from"
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
 }
 
 variable "controller_ami_id" {

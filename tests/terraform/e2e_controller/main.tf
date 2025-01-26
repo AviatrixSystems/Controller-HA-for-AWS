@@ -8,6 +8,10 @@ data "aws_ami" "latest_controller" {
   }
 }
 
+data "http" "my_ip" {
+  url = "http://ipv4.icanhazip.com"
+}
+
 # try to satisfy the controller's password strength meter by combining
 # two passwords with a special char
 resource "random_password" "admin" {
@@ -30,7 +34,7 @@ module "my_controller" {
   customer_id               = var.customer_id
   controller_admin_email    = var.admin_email
   controller_admin_password = local.admin_password
-  incoming_ssl_cidrs        = var.incoming_ssl_cidrs
+  incoming_ssl_cidrs        = length(var.incoming_ssl_cidrs) > 0 ? var.incoming_ssl_cidrs : ["${chomp(data.http.my_ip.response_body)}/32"]
 
   controller_ami_id               = var.controller_ami_id == "" ? data.aws_ami.latest_controller.id : var.controller_ami_id
   controller_version              = var.controller_version

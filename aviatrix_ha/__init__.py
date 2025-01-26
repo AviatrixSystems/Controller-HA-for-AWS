@@ -74,7 +74,7 @@ def _lambda_handler(event, context):
     lambda_client = boto3.client("lambda")
 
     tmp_sg = os.environ.get("TMP_SG_GRP", "")
-    if tmp_sg:
+    if event_type != EventType.FUNCTION and tmp_sg:
         print(f"Lambda probably did not complete last time. Reverting {tmp_sg}")
         update_env_dict(lambda_client, context, {"TMP_SG_GRP": ""})
         restore_security_group_access(client, tmp_sg)
