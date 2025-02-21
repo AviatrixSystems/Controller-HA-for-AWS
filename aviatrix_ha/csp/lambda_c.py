@@ -20,6 +20,21 @@ def wait_function_update_successful(lambda_client, function_name, raise_err=Fals
             raise AvxError(str(err)) from err
 
 
+def get_lambda_tags(lambda_client, arn):
+    """Get tags for the lambda function"""
+    try:
+        response = lambda_client.list_tags(Resource=arn)
+        tags = response.get("Tags", {})
+        print(f"Tags: {tags}")
+    except botocore.exceptions.ClientError as err:
+        raise AvxError(str(err)) from err
+    return [
+        {"Key": key, "Value": value}
+        for key, value in tags.items()
+        if not key.startswith("aws:")
+    ]
+
+
 def set_environ(client, lambda_client, controller_instanceobj, context, eip=None):
     """Sets Environment variables"""
     use_eip = os.environ.get("USE_EIP", "True")
