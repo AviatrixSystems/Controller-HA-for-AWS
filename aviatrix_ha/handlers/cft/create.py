@@ -12,7 +12,7 @@ import yaml
 from aviatrix_ha.common.constants import DEV_FLAG
 from aviatrix_ha.csp.instance import is_controller_termination_protected
 from aviatrix_ha.csp.keypair import validate_keypair
-from aviatrix_ha.csp.lambda_c import update_env_dict
+from aviatrix_ha.csp.lambda_c import get_lambda_tags, update_env_dict
 from aviatrix_ha.csp.subnets import validate_subnets
 from aviatrix_ha.csp.target_group import get_target_group_arns
 from aviatrix_ha.errors.exceptions import AvxError
@@ -104,6 +104,7 @@ def setup_ha(
     iam_arn = os.environ.get("IAM_ARN")
     monitoring = os.environ.get("MONITORING", "disabled") == "enabled"
     ebz_optimized = os.environ.get("EBS_OPT", "False") == "True"
+
     if inst_id:
         print("Setting launch template from instance")
 
@@ -142,7 +143,16 @@ def setup_ha(
     for tag in tags:
         tag_cp.append(dict(tag))
         tag_cp[-1].pop("PropagateAtLaunch", None)
+
     cloud_init = _update_user_data(user_data).encode("utf-8")
+
+    # Combine controller and CF tags
+    cf_tags = get_lambda_tags(lambda_client, context.invoked_function_arn)
+    unique_tags = {}
+    for tag in tag_cp + cf_tags:
+        key_val = (tag["Key"], tag["Value"])
+        unique_tags[key_val] = tag
+
     lt_data = {
         "EbsOptimized": ebz_optimized,
         "IamInstanceProfile": {"Arn": iam_arn},
@@ -152,7 +162,9 @@ def setup_ha(
         "KeyName": key_name,
         "Monitoring": {"Enabled": monitoring},
         "DisableApiTermination": disable_api_term,
-        "TagSpecifications": [{"ResourceType": "instance", "Tags": tag_cp}],
+        "TagSpecifications": [
+            {"ResourceType": "instance", "Tags": list(unique_tags.values())}
+        ],
         "SecurityGroupIds": sg_list,
         "UserData": base64.b64encode(cloud_init).decode("utf-8"),
         # # Unused and unsupported parameters
@@ -169,7 +181,13 @@ def setup_ha(
     if not key_name:
         lt_data.pop("KeyName")
     ec2_client.create_launch_template(
-        LaunchTemplateName=lt_name, LaunchTemplateData=lt_data
+        LaunchTemplateName=lt_name,
+        LaunchTemplateData=lt_data,
+        TagSpecifications=(
+            []
+            if not cf_tags
+            else [{"ResourceType": "launch-template", "Tags": cf_tags}]
+        ),
     )
     print("Created launch template")
     print(f"Target group arns list {target_group_arns}")
@@ -185,7 +203,7 @@ def setup_ha(
                 DesiredCapacity=0 if attach_instance else 1,
                 TargetGroupARNs=target_group_arns,
                 VPCZoneIdentifier=val_subnets,
-                Tags=tags,
+                Tags=list(unique_tags.values()),
             )
         except botocore.exceptions.ClientError as err:
             if "AlreadyExists" in str(err):
@@ -204,7 +222,9 @@ def setup_ha(
             InstanceIds=[inst_id], AutoScalingGroupName=asg_name
         )
     sns_client = boto3.client("sns")
-    sns_topic_arn = sns_client.create_topic(Name=sns_topic).get("TopicArn")
+    sns_topic_arn = sns_client.create_topic(Name=sns_topic, Tags=cf_tags).get(
+        "TopicArn"
+    )
     os.environ["TOPIC_ARN"] = sns_topic_arn
     print("Created SNS topic %s" % sns_topic_arn)
     update_env_dict(lambda_client, context, {"TOPIC_ARN": sns_topic_arn})
