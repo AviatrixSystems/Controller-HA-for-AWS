@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aviatrix_ha"
-version = "2.04"
+version = "2.05"
 description = "Aviatrix Controller HA Lambda functions"
 authors = ["Aviatrix <support@aviatrix.com>"]
 license = "Apache 2.0"
