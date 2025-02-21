@@ -202,6 +202,8 @@ def test_lambda_e2e(monkeypatch, httpserver: HTTPServer):
     iam = boto3.client("iam")
     lfn = boto3.client("lambda")
     s3 = boto3.client("s3")
+    sns = boto3.client("sns")
+    asg = boto3.client("autoscaling")
 
     iam.create_instance_profile(InstanceProfileName="test-profile")
     eip = ec2.allocate_address(Domain="vpc")
@@ -215,7 +217,10 @@ def test_lambda_e2e(monkeypatch, httpserver: HTTPServer):
         TagSpecifications=[
             {
                 "ResourceType": "instance",
-                "Tags": [{"Key": "Name", "Value": HA_TAG}],
+                "Tags": [
+                    {"Key": "Name", "Value": HA_TAG},
+                    {"Key": "SomeKey", "Value": "ControllerValue"},
+                ],
             },
         ],
         SecurityGroups=["sg-test"],
@@ -259,8 +264,12 @@ avx-controller:
         Role=role_arn,
         Handler="aviatrix_ha.lambda_handler",
         Code={"ZipFile": b""},
+        Tags={
+            "SomeKey": "LambdaValue",
+        },
     )
     lambda_arn = rsp["FunctionArn"]
+    CONTEXT.invoked_function_arn = lambda_arn
 
     s3.create_bucket(Bucket=os.environ["S3_BUCKET_BACK"])
     s3.put_object(
@@ -284,6 +293,39 @@ avx-controller:
     # Test notification from ASG
     aviatrix_ha._lambda_handler(_sns_message("autoscaling:TEST_NOTIFICATION"), CONTEXT)
 
+    # Verify tags
+    rsp = sns.list_topics()
+    print(f"List of SNS topics: {rsp}")
+    rsp = sns.list_tags_for_resource(ResourceArn=rsp["Topics"][0]["TopicArn"])
+    assert rsp["Tags"] == [{"Key": "SomeKey", "Value": "LambdaValue"}]
+
+    rsp = asg.describe_auto_scaling_groups(
+        AutoScalingGroupNames=[HA_TAG],
+    )
+    assert rsp["AutoScalingGroups"][0]["Tags"] == [
+        {
+            "Key": "Name",
+            "PropagateAtLaunch": False,
+            "ResourceId": "ha_ctrl",
+            "ResourceType": "auto-scaling-group",
+            "Value": "ha_ctrl",
+        },
+        {
+            "Key": "SomeKey",
+            "PropagateAtLaunch": False,
+            "ResourceId": "ha_ctrl",
+            "ResourceType": "auto-scaling-group",
+            "Value": "ControllerValue",
+        },
+        {
+            "Key": "SomeKey",
+            "PropagateAtLaunch": False,
+            "ResourceId": "ha_ctrl",
+            "ResourceType": "auto-scaling-group",
+            "Value": "LambdaValue",
+        },
+    ]
+
     # Simulate instance being terminated and ASG creating a new one
     ec2.terminate_instances(InstanceIds=[instance_id])
     ec2.disassociate_address(PublicIp=eip["PublicIp"])
@@ -301,7 +343,7 @@ avx-controller:
         ]
     )
     instance_id = rsp["Reservations"][0]["Instances"][0]["InstanceId"]
-    rsp = ec2.describe_instance_attribute(InstanceId=instance_id, Attribute="userData") 
+    rsp = ec2.describe_instance_attribute(InstanceId=instance_id, Attribute="userData")
     user_data = base64.b64decode(rsp["UserData"]["Value"]).decode("utf-8")
     print(f"User data from new instance: {user_data}")
     assert "#cloud-config\n" in user_data
