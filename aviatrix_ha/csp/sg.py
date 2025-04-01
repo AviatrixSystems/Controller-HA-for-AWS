@@ -10,7 +10,13 @@ BLOCKED_RULE_TAG = "avx:ha-blocked-rule"
 
 
 def disable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
-    """Disable open security group if exists"""
+    """Disable open security group if exists.
+
+    We use the modify_security_group_rules API to change the CIDR from
+    0.0.0.0/0 to 0.0.0.0/32 for all open security group rules. This is done
+    "in-place" to preserve any metadata (description, tags, etc) that might be
+    preexisting on the rule.
+    """
     modified_rules: list[dict[str, Any]] = []
     try:
         rsp = client.describe_instances(InstanceIds=[instance_id])
@@ -23,7 +29,7 @@ def disable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
                 }
             ]
         )
-        for sgr in rsp["SecurityGroupRules"]:
+        for sgr in rsp.get("SecurityGroupRules", []):
             if sgr["IsEgress"]:
                 continue
             if (
