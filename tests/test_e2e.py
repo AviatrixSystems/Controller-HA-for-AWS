@@ -47,6 +47,23 @@ def test_e2e_controller(e2e_controller):
 
     try:
         ec2 = boto3.client("ec2", region_name="us-east-1")
+
+        rsp = ec2.describe_instances(
+            Filters=[
+                {"Name": "instance-state-name", "Values": ["running"]},
+                {"Name": "tag:Name", "Values": [instance_name]},
+            ]
+        )
+        # Get the security group id
+        sg_id = rsp["Reservations"][0]["Instances"][0]["SecurityGroups"][0]["GroupId"]
+        logger.info("Controller instance found: %s, Instance ID: %s, EIP: %s, SG ID: %s",
+                    instance_name, instance_id, eip, sg_id)
+        ec2.authorize_security_group_ingress(GroupId=sg_id, IpPermissions=[{
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+        }])
         ec2.modify_instance_attribute(
             InstanceId=instance_id, DisableApiTermination={"Value": False}
         )

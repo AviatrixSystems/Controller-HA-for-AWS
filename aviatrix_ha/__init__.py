@@ -74,10 +74,13 @@ def _lambda_handler(event, context):
     lambda_client = boto3.client("lambda")
 
     tmp_sg = os.environ.get("TMP_SG_GRP", "")
-    if event_type != EventType.FUNCTION and tmp_sg:
-        print(f"Lambda probably did not complete last time. Reverting {tmp_sg}")
-        update_env_dict(lambda_client, context, {"TMP_SG_GRP": ""})
-        restore_security_group_access(client, tmp_sg)
+    tmp_sgr = os.environ.get("TMP_SG_RULE", "")
+    if event_type != EventType.FUNCTION and tmp_sg and tmp_sgr:
+        print(
+            f"Lambda probably did not complete last time. Reverting {tmp_sg}/{tmp_sgr}"
+        )
+        update_env_dict(lambda_client, context, {"TMP_SG_GRP": "", "TMP_SG_RULE": ""})
+        restore_security_group_access(client, tmp_sg, tmp_sgr)
     instance_name = os.environ.get("AVIATRIX_TAG")
     inst_id = os.environ.get("INST_ID")
     print(f"Trying describe with name {instance_name} and ID {inst_id}")
