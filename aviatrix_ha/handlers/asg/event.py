@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from aviatrix_ha.api import client
+from aviatrix_ha.api.external.ip import get_public_ip
 from aviatrix_ha.common.constants import (
     HANDLE_HA_TIMEOUT,
     WAIT_DELAY,
@@ -18,6 +19,8 @@ from aviatrix_ha.csp.s3 import (
     is_backup_file_is_recent,
 )
 from aviatrix_ha.csp.sg import (
+    disable_open_sg_rules,
+    enable_open_sg_rules,
     restore_security_group_access,
     temp_add_security_group_access,
 )
@@ -83,6 +86,34 @@ class HAEventHandler:
             logger.info("Not updating controller instance termination protection")
         return HAStepResult.CONTINUE
 
+    def disable_open_sg_rules_step(self) -> HAStepResult:
+        logger.info("Disabling any open SG rules")
+        modified_rules = disable_open_sg_rules(
+            self.ec2_client, self.controller_instance["InstanceId"]
+        )
+        if modified_rules:
+            logger.info("Disabled rules: %s", modified_rules)
+
+        rsp = self.ec2_client.describe_security_groups(
+            GroupIds=[
+                sg["GroupId"] for sg in self.controller_instance["SecurityGroups"]
+            ],
+        )
+        logger.info("Current security groups for the controller instance: %s", rsp)
+        return HAStepResult.CONTINUE
+
+    def enable_open_sg_rules_step(self) -> HAStepResult:
+        logger.info("Re-enabling any previously allowed open SG rules")
+        enable_open_sg_rules(self.ec2_client, self.controller_instance["InstanceId"])
+
+        rsp = self.ec2_client.describe_security_groups(
+            GroupIds=[
+                sg["GroupId"] for sg in self.controller_instance["SecurityGroups"]
+            ],
+        )
+        logger.info("Current security groups for the controller instance: %s", rsp)
+        return HAStepResult.CONTINUE
+
     def assign_eip_step(self) -> HAStepResult:
         if os.environ.get("USE_EIP", "False") == "True":
             logger.info("Assigning EIP")
@@ -99,19 +130,24 @@ class HAEventHandler:
         return HAStepResult.CONTINUE
 
     def create_temp_sg_rule_step(self) -> HAStepResult:
-        duplicate, sg_modified = temp_add_security_group_access(
+        my_ip = get_public_ip()
+        duplicate, sg_modified, sgr_id = temp_add_security_group_access(
             self.ec2_client,
             self.controller_instance,
+            my_ip,
             os.environ.get("API_PRIVATE_ACCESS"),
         )
         logger.info(
-            "0.0.0.0:443/0 rule is %s present %s",
+            "%s:443/32 rule is %s present %s",
+            my_ip,
             "already" if duplicate else "not",
-            "" if duplicate else f". Modified Security group {sg_modified}",
+            "" if duplicate else f". Modified Security group {sg_modified}/{sgr_id}",
         )
         if not duplicate:
             update_env_dict(
-                self.lambda_client, self.context, {"TMP_SG_GRP": sg_modified}
+                self.lambda_client,
+                self.context,
+                {"TMP_SG_GRP": sg_modified, "TMP_SG_RULE": sgr_id},
             )
         return HAStepResult.CONTINUE
 
@@ -169,15 +205,20 @@ class HAEventHandler:
         return HAStepResult.CONTINUE
 
     def remove_temp_sg_rule_step(self) -> HAStepResult:
-        if not os.environ.get("TMP_SG_GRP"):
+        if not os.environ.get("TMP_SG_GRP") or not os.environ.get("TMP_SG_RULE"):
             return HAStepResult.CONTINUE
-        restore_security_group_access(self.ec2_client, os.environ.get("TMP_SG_GRP"))
-        update_env_dict(self.lambda_client, self.context, {"TMP_SG_GRP": ""})
+        restore_security_group_access(
+            self.ec2_client, os.environ["TMP_SG_GRP"], os.environ["TMP_SG_RULE"]
+        )
+        update_env_dict(
+            self.lambda_client, self.context, {"TMP_SG_GRP": "", "TMP_SG_RULE": ""}
+        )
         return HAStepResult.CONTINUE
 
     def run(self):
         steps = [
             self.disable_api_termination_step,
+            self.disable_open_sg_rules_step,
             self.assign_eip_step,
             self.enable_t2_unlimited_step,
             self.create_temp_sg_rule_step,
@@ -186,14 +227,28 @@ class HAEventHandler:
             self.create_temp_account_step,
             self.restore_backup_step,
             self.update_lambda_env_step,
+            self.enable_open_sg_rules_step,
+        ]
+        cleanup_steps = [
             self.remove_temp_sg_rule_step,
         ]
-        for step in steps:
-            if self.deadline_exceeded():
-                raise AvxError("Deadline exceeded while handling HA event")
-            result = step()
-            if result == HAStepResult.FINISH:
-                return
+        try:
+            for step in steps:
+                if self.deadline_exceeded():
+                    raise AvxError("Deadline exceeded while handling HA event")
+                result = step()
+                if result == HAStepResult.FINISH:
+                    return
+        except Exception:
+            raise
+        finally:
+            for step in cleanup_steps:
+                try:
+                    step()
+                except Exception as err:
+                    logger.exception(
+                        "Error during cleanup step %s: %s", step.__name__, err
+                    )
 
 
 def handle_ha_event(ec2_client, lambda_client, controller_instanceobj, context):
