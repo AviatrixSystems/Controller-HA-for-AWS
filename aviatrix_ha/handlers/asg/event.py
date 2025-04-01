@@ -10,6 +10,7 @@ from aviatrix_ha.api.cust import set_customer_id
 from aviatrix_ha.api.enable_central_services_staging_mode import (
     enable_central_services_staging_mode,
 )
+from aviatrix_ha.api.external.ip import get_public_ip
 from aviatrix_ha.api.initial_setup import get_initial_setup_status, run_initial_setup
 from aviatrix_ha.api.login import login_to_controller
 from aviatrix_ha.api.restore import restore_backup
@@ -29,6 +30,8 @@ from aviatrix_ha.csp.s3 import (
     retrieve_controller_version,
 )
 from aviatrix_ha.csp.sg import (
+    disable_open_sg_rules,
+    enable_open_sg_rules,
     restore_security_group_access,
     temp_add_security_group_access,
 )
@@ -72,6 +75,12 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
             print(err)
     else:
         print("Not updating controller instance termination protection")
+
+    print("Disabling any open SG rules")
+    open_sg_rules = disable_open_sg_rules(client, controller_instanceobj["InstanceId"])
+    if open_sg_rules:
+        print(f"Modified rules: {open_sg_rules}")
+
     if os.environ.get("USE_EIP", "False") == "True":
         print("Assigning EIP")
         if not assign_eip(client, controller_instanceobj, os.environ.get("EIP")):
@@ -96,14 +105,15 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     threading.Thread(
         target=enable_t2_unlimited, args=[client, controller_instanceobj["InstanceId"]]
     ).start()
-    duplicate, sg_modified = temp_add_security_group_access(
-        client, controller_instanceobj, api_private_access
+    my_ip = get_public_ip()
+    duplicate, sg_modified, sgr_id = temp_add_security_group_access(
+        client, controller_instanceobj, my_ip, api_private_access
     )
     print(
-        "0.0.0.0:443/0 rule is %s present %s"
-        % (
+        "%s:443/32 rule is %s present %s" % (
+            my_ip,
             "already" if duplicate else "not",
-            "" if duplicate else ". Modified Security group %s" % sg_modified,
+            "" if duplicate else ". Modified Security group %s/%s" % (sg_modified, sgr_id),
         )
     )
 
@@ -120,7 +130,7 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
 
     try:
         if not duplicate:
-            update_env_dict(lambda_client, context, {"TMP_SG_GRP": sg_modified})
+            update_env_dict(lambda_client, context, {"TMP_SG_GRP": sg_modified, "TMP_SG_RULE": sgr_id})
         cid = _try_login(
             controller_api_ip, new_private_ip, start_time + HANDLE_HA_TIMEOUT
         )
@@ -228,6 +238,11 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
                 print("Successfully restored backup. Updating lambda configuration")
                 set_environ(client, lambda_client, controller_instanceobj, context, eip)
                 print("Updated lambda configuration")
+
+                if open_sg_rules:
+                    print("Re-enabling any previously allowed open SG rules")
+                    enable_open_sg_rules(client, controller_instanceobj["InstanceId"])
+
                 print("Controller HA event has been successfully handled")
                 return
             if response_json.get("reason", "") == "account_password required.":
@@ -273,8 +288,8 @@ def handle_ha_event(client, lambda_client, controller_instanceobj, context):
     finally:
         if not duplicate:
             print("Reverting sg %s" % sg_modified)
-            update_env_dict(lambda_client, context, {"TMP_SG_GRP": ""})
-            restore_security_group_access(client, sg_modified)
+            update_env_dict(lambda_client, context, {"TMP_SG_GRP": "", "TMP_SG_RULE": ""})
+            restore_security_group_access(client, sg_modified, sgr_id)
 
 
 def handle_login_failure(

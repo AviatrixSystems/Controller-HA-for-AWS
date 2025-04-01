@@ -5,19 +5,125 @@ import botocore
 from aviatrix_ha.errors.exceptions import AvxError
 
 
-def restore_security_group_access(client, sg_id):
+BLOCKED_RULE_TAG = "avx:ha-blocked-rule"
+
+
+def disable_open_sg_rules(client, instance_id):
+    """Disable open security group if exists
+
+    We use the modify_security_group_rules API to change the CIDR from
+    0.0.0.0/0 to 0.0.0.0/32 for all open security group rules. This is done
+    "in-place" to preserve any metadata (description, tags, etc) that might be
+    preexisting on the rule.
+    """
+    modified_rules = []
+    try:
+        rsp = client.describe_instances(InstanceIds=[instance_id])
+        sgs = rsp["Reservations"][0]["Instances"][0].get("SecurityGroups", [])
+        rsp = client.describe_security_group_rules(
+            Filters=[
+                {
+                    "Name": "group-id",
+                    "Values": [sg["GroupId"] for sg in sgs],
+                }
+            ]
+        )
+        for sgr in rsp["SecurityGroupRules"]:
+            if sgr["IsEgress"]:
+                continue
+            if (
+                sgr["IpProtocol"] != "tcp"
+                or sgr["FromPort"] > 443
+                or sgr["ToPort"] < 443
+            ):
+                continue
+            if sgr["CidrIpv4"] != "0.0.0.0/0":
+                continue
+
+            modified_rule = {
+                "IpProtocol": sgr["IpProtocol"],
+                "FromPort": sgr["FromPort"],
+                "ToPort": sgr["ToPort"],
+                "CidrIpv4": "0.0.0.0/32",
+            }
+
+            client.modify_security_group_rules(
+                GroupId=sgr["GroupId"],
+                SecurityGroupRules=[
+                    {
+                        "SecurityGroupRuleId": sgr["SecurityGroupRuleId"],
+                        "SecurityGroupRule": modified_rule,
+                    }
+                ],
+            )
+            modified_rules.append(modified_rule)
+            client.create_tags(
+                Resources=[sgr["SecurityGroupRuleId"]],
+                Tags=[
+                    {
+                        "Key": BLOCKED_RULE_TAG,
+                        "Value": "true",
+                    }
+                ],
+            )
+    except botocore.exceptions.ClientError as err:
+        raise AvxError(str(err)) from err
+    return modified_rules
+
+
+def enable_open_sg_rules(client, instance_id):
+    """Re-enable any previously disabled open SG rules."""
+    modified_rules = []
+    try:
+        rsp = client.describe_instances(InstanceIds=[instance_id])
+        sgs = rsp["Reservations"][0]["Instances"][0].get("SecurityGroups", [])
+        rsp = client.describe_security_group_rules(
+            Filters=[
+                {
+                    "Name": "tag-key",
+                    "Values": [BLOCKED_RULE_TAG],
+                },
+                {
+                    "Name": "group-id",
+                    "Values": [sg["GroupId"] for sg in sgs],
+                },
+            ],
+        )
+        print(f"Found security groups to be restored: {rsp['SecurityGroupRules']}")
+        for sgr in rsp["SecurityGroupRules"]:
+            client.modify_security_group_rules(
+                GroupId=sgr["GroupId"],
+                SecurityGroupRules=[
+                    {
+                        "SecurityGroupRuleId": sgr["SecurityGroupRuleId"],
+                        "SecurityGroupRule": {
+                            "IpProtocol": sgr["IpProtocol"],
+                            "FromPort": sgr["FromPort"],
+                            "ToPort": sgr["ToPort"],
+                            "CidrIpv4": "0.0.0.0/0",
+                        },
+                    }
+                ],
+            )
+            client.delete_tags(
+                Resources=[sgr["SecurityGroupRuleId"]],
+                Tags=[
+                    {
+                        "Key": BLOCKED_RULE_TAG,
+                    }
+                ],
+            )
+    except botocore.exceptions.ClientError as err:
+        raise AvxError(str(err)) from err
+    return modified_rules
+
+
+def restore_security_group_access(client, sg_id, sgr_id):
     """Remove 0.0.0.0/0 rule in previously added security group"""
     try:
         client.revoke_security_group_ingress(
             GroupId=sg_id,
-            IpPermissions=[
-                {
-                    "IpProtocol": "tcp",
-                    "FromPort": 443,
-                    "ToPort": 443,
-                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
-                }
-            ],
+            SecurityGroupRuleIds=[sgr_id],
         )
     except botocore.exceptions.ClientError as err:
         if "InvalidPermission.NotFound" not in str(err) and "InvalidGroup" not in str(
@@ -26,32 +132,39 @@ def restore_security_group_access(client, sg_id):
             print(str(err))
 
 
-def temp_add_security_group_access(client, controller_instanceobj, api_private_access):
+def temp_add_security_group_access(
+    client, controller_instanceobj, lambda_ip, api_private_access
+):
     """Temporarily add 0.0.0.0/0 rule in one security group"""
     sgs = [sg_["GroupId"] for sg_ in controller_instanceobj["SecurityGroups"]]
     if api_private_access == "True":
-        return True, sgs[0]
+        return True, sgs[0], ""
 
     if not sgs:
         raise AvxError("No security groups were attached to controller")
     try:
-        client.authorize_security_group_ingress(
+        rsp = client.authorize_security_group_ingress(
             GroupId=sgs[0],
             IpPermissions=[
                 {
                     "IpProtocol": "tcp",
                     "FromPort": 443,
                     "ToPort": 443,
-                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                    "IpRanges": [
+                        {
+                            "CidrIp": f"{lambda_ip}/32",
+                            "Description": "Lambda access for Aviatrix HA",
+                        }
+                    ],
                 }
             ],
         )
     except botocore.exceptions.ClientError as err:
         if "InvalidPermission.Duplicate" in str(err):
-            return True, sgs[0]
+            return True, sgs[0], ""
         print(str(err))
         raise
-    return False, sgs[0]
+    return False, sgs[0], rsp["SecurityGroupRules"][0]["SecurityGroupRuleId"]
 
 
 def create_new_sg(client):
@@ -67,31 +180,6 @@ def create_new_sg(client):
         if "InvalidGroup.Duplicate" in str(err):
             rsp = client.describe_security_groups(GroupNames=[instance_name])
             sg_id = rsp["SecurityGroups"][0]["GroupId"]
-        else:
-            raise AvxError(str(err)) from err
-    try:
-        client.authorize_security_group_ingress(
-            GroupId=sg_id,
-            IpPermissions=[
-                {
-                    "IpProtocol": "tcp",
-                    "FromPort": 443,
-                    "ToPort": 443,
-                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
-                },
-                {
-                    "IpProtocol": "tcp",
-                    "FromPort": 80,
-                    "ToPort": 80,
-                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
-                },
-            ],
-        )
-    except botocore.exceptions.ClientError as err:
-        if "InvalidGroup.Duplicate" in str(err) or "InvalidPermission.Duplicate" in str(
-            err
-        ):
-            pass
         else:
             raise AvxError(str(err)) from err
     return sg_id
