@@ -4,6 +4,10 @@ import os
 import time
 from typing import Any
 
+from types_boto3_ec2.client import EC2Client
+from types_boto3_ec2.type_defs import InstanceTypeDef
+from types_boto3_lambda.client import LambdaClient
+
 from aviatrix_ha.api import client
 from aviatrix_ha.api.external.ip import get_public_ip
 from aviatrix_ha.common.constants import (
@@ -43,7 +47,11 @@ class HAEventHandler:
     """Encapsulates the steps taken to handle a HA event"""
 
     def __init__(
-        self, ec2_client, lambda_client, context, controller_instance: dict[str, Any]
+        self,
+        ec2_client: EC2Client,
+        lambda_client: LambdaClient,
+        context: Any,
+        controller_instance: InstanceTypeDef,
     ):
         self.ec2_client = ec2_client
         self.lambda_client = lambda_client
@@ -51,10 +59,10 @@ class HAEventHandler:
         self.controller_instance = controller_instance
         self.start_time = time.time()
 
-        self.public_ip = self.api_ip = os.environ.get("EIP")
-        self.private_ip = controller_instance["NetworkInterfaces"][0].get(
+        self.public_ip = self.api_ip = os.environ.get("EIP", "")
+        self.private_ip = controller_instance["NetworkInterfaces"][0][
             "PrivateIpAddress"
-        )
+        ]
         if self.api_ip is None or os.environ.get("API_PRIVATE_ACCESS") == "True":
             self.api_ip = self.private_ip
 
@@ -215,7 +223,7 @@ class HAEventHandler:
         )
         return HAStepResult.CONTINUE
 
-    def run(self):
+    def run(self) -> None:
         steps = [
             self.disable_api_termination_step,
             self.disable_open_sg_rules_step,
@@ -251,7 +259,12 @@ class HAEventHandler:
                     )
 
 
-def handle_ha_event(ec2_client, lambda_client, controller_instanceobj, context):
+def handle_ha_event(
+    ec2_client: EC2Client,
+    lambda_client: LambdaClient,
+    controller_instanceobj: InstanceTypeDef,
+    context: Any,
+) -> None:
     """handle_ha_event() is called in response to the ASG creating a new controller instance.
 
     The function will run through a set of steps to restore the controller to a previous state.

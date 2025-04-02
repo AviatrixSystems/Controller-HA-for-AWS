@@ -9,7 +9,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def handle_function_event(event, context) -> dict[str, Any]:
+def handle_function_event(
+    event: dict[str, Any], context: dict[str, Any]
+) -> dict[str, Any]:
     """Handle lambda function event"""
     headers = event["headers"]
     request = event["requestContext"].get("http", {})

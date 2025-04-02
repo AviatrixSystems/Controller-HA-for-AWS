@@ -3,6 +3,7 @@ import time
 
 import boto3
 import botocore
+from types_boto3_ec2.type_defs import InstanceTypeDef
 
 from aviatrix_ha.errors.exceptions import AvxError
 
@@ -11,13 +12,15 @@ MAXIMUM_BACKUP_AGE = 24 * 3600 * 3  # 3 days
 AWS_US_EAST_REGION = "us-east-1"
 
 
-def retrieve_controller_version(version_file):
+def retrieve_controller_version(version_file: str) -> tuple[str, str]:
     """Get the controller version from backup file"""
     print("Retrieving version from file " + str(version_file))
     s3c = boto3.client("s3", region_name=os.environ["S3_BUCKET_REGION"])
     try:
         with open("/tmp/version_ctrlha.txt", "wb") as data:
-            s3c.download_fileobj(os.environ.get("S3_BUCKET_BACK"), version_file, data)
+            s3c.download_fileobj(
+                os.environ.get("S3_BUCKET_BACK", ""), version_file, data
+            )
     except botocore.exceptions.ClientError as err:
         if err.response["Error"]["Code"] == "404":
             print("The object does not exist.")
@@ -47,12 +50,14 @@ def retrieve_controller_version(version_file):
     return ctrl_version, ctrl_version_with_build
 
 
-def verify_bucket():
+def verify_bucket() -> tuple[bool, str]:
     """Verify S3 and controller account credentials"""
     print("Verifying bucket")
     try:
         s3_client = boto3.client("s3")
-        resp = s3_client.get_bucket_location(Bucket=os.environ.get("S3_BUCKET_BACK"))
+        resp = s3_client.get_bucket_location(
+            Bucket=os.environ.get("S3_BUCKET_BACK", "")
+        )
     except Exception as err:
         print("S3 bucket used for backup is not " "valid. %s" % str(err))
         return False, ""
@@ -73,7 +78,7 @@ def verify_bucket():
     return True, bucket_region
 
 
-def verify_backup_file(controller_instanceobj):
+def verify_backup_file(controller_instanceobj: InstanceTypeDef) -> tuple[bool, str]:
     """Verify if s3 file exists"""
     print("Verifying Backup file")
     try:
@@ -84,7 +89,9 @@ def verify_backup_file(controller_instanceobj):
         s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
         try:
             with open("/tmp/tmp.enc", "wb") as data:
-                s3c.download_fileobj(os.environ.get("S3_BUCKET_BACK"), s3_file, data)
+                s3c.download_fileobj(
+                    os.environ.get("S3_BUCKET_BACK", ""), s3_file, data
+                )
         except botocore.exceptions.ClientError as err:
             if err.response["Error"]["Code"] == "404":
                 print("The object %s does not exist." % s3_file)
@@ -98,13 +105,13 @@ def verify_backup_file(controller_instanceobj):
         return True, s3_file
 
 
-def is_backup_file_is_recent(backup_file):
+def is_backup_file_is_recent(backup_file: str) -> bool:
     """Check if backup file is not older than MAXIMUM_BACKUP_AGE"""
     try:
         s3c = boto3.client("s3", region_name=os.environ["S3_BUCKET_REGION"])
         try:
             file_obj = s3c.get_object(
-                Key=backup_file, Bucket=os.environ.get("S3_BUCKET_BACK")
+                Key=backup_file, Bucket=os.environ.get("S3_BUCKET_BACK", "")
             )
         except botocore.exceptions.ClientError as err:
             print(str(err))

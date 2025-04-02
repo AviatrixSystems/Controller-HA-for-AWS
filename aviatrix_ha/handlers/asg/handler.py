@@ -1,5 +1,11 @@
 import json
 import os
+from typing import cast, Any
+
+from types_boto3_ec2.client import EC2Client
+from types_boto3_ec2.literals import InstanceTypeType
+from types_boto3_ec2.type_defs import InstanceTypeDef
+from types_boto3_lambda.client import LambdaClient
 
 from aviatrix_ha.csp.sg import create_new_sg
 from aviatrix_ha.errors.exceptions import AvxError
@@ -8,8 +14,13 @@ from aviatrix_ha.handlers.cft.handler import delete_resources, setup_ha
 
 
 def handle_sns_event(
-    describe_err, event, client, lambda_client, controller_instanceobj, context
-):
+    describe_err: str | None,
+    event: dict[str, Any],
+    client: EC2Client,
+    lambda_client: LambdaClient,
+    controller_instanceobj: InstanceTypeDef,
+    context: Any,
+) -> None:
     """Handle an autoscaling group event which is sent by SNS"""
     if describe_err:
         try:
@@ -39,10 +50,10 @@ def handle_sns_event(
         # and "The security group" in sns_msg_desc and "does not exist in VPC" in sns_msg_desc:
         print("Instance launch error, recreating with new security group configuration")
         sg_id = create_new_sg(client)
-        ami_id = os.environ.get("AMI_ID")
-        inst_type = os.environ.get("INST_TYPE")
-        key_name = os.environ.get("KEY_NAME")
-        user_data = os.environ.get("USER_DATA")
+        ami_id = os.environ.get("AMI_ID", "")
+        inst_type = cast(InstanceTypeType, os.environ.get("INST_TYPE", ""))
+        key_name = os.environ.get("KEY_NAME", "")
+        user_data = os.environ.get("USER_DATA", "")
         delete_resources(None, detach_instances=False)
         setup_ha(
             ami_id,

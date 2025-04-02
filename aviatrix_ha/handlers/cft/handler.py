@@ -1,5 +1,10 @@
 import os
 import traceback
+from typing import Any
+
+from types_boto3_ec2.client import EC2Client
+from types_boto3_ec2.type_defs import InstanceTypeDef
+from types_boto3_lambda.client import LambdaClient
 
 from aviatrix_ha.api.external.ami import check_ami_id
 from aviatrix_ha.csp.eip import is_ip_elastic
@@ -18,14 +23,14 @@ from aviatrix_ha.handlers.cft.response import send_response
 
 
 def handle_cft(
-    describe_err,
-    event,
-    context,
-    ec2_client,
-    lambda_client,
-    controller_instanceobj,
-    instance_name,
-):
+    describe_err: str | None,
+    event: dict[str, Any],
+    context: Any,
+    ec2_client: EC2Client,
+    lambda_client: LambdaClient,
+    controller_instanceobj: InstanceTypeDef,
+    instance_name: str,
+) -> None:
     """Handle CFT event"""
     if describe_err:
         print("From CF Request")
@@ -67,8 +72,13 @@ def handle_cft(
 
 
 def _handle_cloud_formation_request(
-    ec2_client, event, lambda_client, controller_instanceobj, context, instance_name
-):
+    ec2_client: EC2Client,
+    event: dict[str, Any],
+    lambda_client: LambdaClient,
+    controller_instanceobj: InstanceTypeDef,
+    context: Any,
+    instance_name: str,
+) -> tuple[str, str]:
     """Handle Requests from cloud formation"""
     response_status = "SUCCESS"
     err_reason = ""
@@ -102,7 +112,7 @@ def _handle_cloud_formation_request(
         if not is_backup_file_is_recent(backup_file):
             return "FAILED", f"Backup file is older than {MAXIMUM_BACKUP_AGE}"
         if os.environ.get("EIP"):
-            if not is_ip_elastic(ec2_client, os.environ.get("EIP")):
+            if not is_ip_elastic(ec2_client, os.environ.get("EIP", "")):
                 # Public IP but no Elastic IP
                 if (
                     not os.environ.get("API_PRIVATE_ACCESS", "False") == "True"

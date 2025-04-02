@@ -26,12 +26,21 @@ trustme = "^1.2.0"
 moto = {extras = ["ec2", "lambda", "sts"], version = "^5.0.22"}
 cfn-lint = "^1.22.1"
 pytest-terraform = "^0.7.0"
+types-boto3 = {extras = ["full"], version = "^1.37.24"}
 
 [tool.isort]
 profile = "black"
 
 [tool.mypy]
-ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+extra_checks = true
+check_untyped_defs = true
+disallow_untyped_calls = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
 
 [build-system]
 requires = ["poetry-core"]
