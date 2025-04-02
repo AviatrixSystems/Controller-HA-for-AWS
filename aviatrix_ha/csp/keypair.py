@@ -4,7 +4,7 @@ import botocore
 from aviatrix_ha.errors.exceptions import AvxError
 
 
-def validate_keypair(key_name):
+def validate_keypair(key_name: str) -> None:
     """Validates Keypairs"""
     try:
         client = boto3.client("ec2")

@@ -40,4 +40,4 @@ black:
 
 .PHONY: mypy
 mypy:
-	poetry run mypy aviatrix_ha
+	poetry run mypy --install-types --non-interactive aviatrix_ha

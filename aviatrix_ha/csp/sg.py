@@ -2,6 +2,8 @@ import os
 from typing import Any
 
 import botocore
+from types_boto3_ec2.client import EC2Client
+from types_boto3_ec2.type_defs import InstanceTypeDef
 
 from aviatrix_ha.errors.exceptions import AvxError
 
@@ -9,7 +11,7 @@ from aviatrix_ha.errors.exceptions import AvxError
 BLOCKED_RULE_TAG = "avx:ha-blocked-rule"
 
 
-def disable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
+def disable_open_sg_rules(client: EC2Client, instance_id: str) -> list[dict[str, Any]]:
     """Disable open security group if exists.
 
     We use the modify_security_group_rules API to change the CIDR from
@@ -19,9 +21,9 @@ def disable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
     """
     modified_rules: list[dict[str, Any]] = []
     try:
-        rsp = client.describe_instances(InstanceIds=[instance_id])
-        sgs = rsp["Reservations"][0]["Instances"][0].get("SecurityGroups", [])
-        rsp = client.describe_security_group_rules(
+        dirsp = client.describe_instances(InstanceIds=[instance_id])
+        sgs = dirsp["Reservations"][0]["Instances"][0].get("SecurityGroups", [])
+        dsgrrsp = client.describe_security_group_rules(
             Filters=[
                 {
                     "Name": "group-id",
@@ -29,7 +31,7 @@ def disable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
                 }
             ]
         )
-        for sgr in rsp.get("SecurityGroupRules", []):
+        for sgr in dsgrrsp.get("SecurityGroupRules", []):
             if sgr["IsEgress"]:
                 continue
             if (
@@ -69,13 +71,13 @@ def disable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
     return modified_rules
 
 
-def enable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
+def enable_open_sg_rules(client: EC2Client, instance_id: str) -> list[dict[str, Any]]:
     """Re-enable any previously disabled open SG rules."""
     modified_rules: list[dict[str, Any]] = []
     try:
-        rsp = client.describe_instances(InstanceIds=[instance_id])
-        sgs = rsp["Reservations"][0]["Instances"][0].get("SecurityGroups", [])
-        rsp = client.describe_security_group_rules(
+        dirsp = client.describe_instances(InstanceIds=[instance_id])
+        sgs = dirsp["Reservations"][0]["Instances"][0].get("SecurityGroups", [])
+        dsgrrsp = client.describe_security_group_rules(
             Filters=[
                 {
                     "Name": "tag-key",
@@ -87,8 +89,8 @@ def enable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
                 },
             ],
         )
-        print(f"Found security groups to be restored: {rsp['SecurityGroupRules']}")
-        for sgr in rsp["SecurityGroupRules"]:
+        print(f"Found security groups to be restored: {dsgrrsp['SecurityGroupRules']}")
+        for sgr in dsgrrsp["SecurityGroupRules"]:
             client.modify_security_group_rules(
                 GroupId=sgr["GroupId"],
                 SecurityGroupRules=[
@@ -116,7 +118,7 @@ def enable_open_sg_rules(client, instance_id: str) -> list[dict[str, Any]]:
     return modified_rules
 
 
-def restore_security_group_access(client, sg_id: str, sgr_id: str):
+def restore_security_group_access(client: EC2Client, sg_id: str, sgr_id: str) -> None:
     """Remove SG rule in previously added security group"""
     try:
         client.revoke_security_group_ingress(
@@ -131,8 +133,8 @@ def restore_security_group_access(client, sg_id: str, sgr_id: str):
 
 
 def temp_add_security_group_access(
-    client,
-    controller_instanceobj: dict[str, Any],
+    client: EC2Client,
+    controller_instanceobj: InstanceTypeDef,
     lambda_ip: str,
     api_private_access: str | None,
 ) -> tuple[bool, str, str]:
@@ -169,10 +171,10 @@ def temp_add_security_group_access(
     return False, sgs[0], rsp["SecurityGroupRules"][0]["SecurityGroupRuleId"]
 
 
-def create_new_sg(client):
+def create_new_sg(client: EC2Client) -> str:
     """Creates a new security group"""
-    instance_name = os.environ.get("AVIATRIX_TAG")
-    vpc_id = os.environ.get("VPC_ID")
+    instance_name = os.environ.get("AVIATRIX_TAG", "")
+    vpc_id = os.environ.get("VPC_ID", "")
     try:
         resp = client.create_security_group(
             Description="Aviatrix Controller", GroupName=instance_name, VpcId=vpc_id

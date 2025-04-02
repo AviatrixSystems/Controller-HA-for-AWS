@@ -1,14 +1,19 @@
 """ CSP APis related to instances"""
 
 import base64
+from typing import Any
 
 import boto3
 import botocore
+from types_boto3_ec2.client import EC2Client
+from types_boto3_ec2.type_defs import InstanceTypeDef
 
 
-def get_controller_instance(ec2_client, instance_name, inst_id):
+def get_controller_instance(
+    ec2_client: EC2Client, instance_name: str, inst_id: str
+) -> tuple[str | None, InstanceTypeDef]:
     """Find the controller instance based on name or id"""
-    controller_instanceobj = None
+    controller_instanceobj: InstanceTypeDef = {}
     describe_err = None
     try:
         try:
@@ -41,7 +46,7 @@ def get_controller_instance(ec2_client, instance_name, inst_id):
     return describe_err, controller_instanceobj
 
 
-def enable_t2_unlimited(client, inst_id):
+def enable_t2_unlimited(client: EC2Client, inst_id: str) -> None:
     """Modify instance credit to unlimited for T2"""
     print("Enabling T2 unlimited for %s" % inst_id)
     try:
@@ -55,7 +60,7 @@ def enable_t2_unlimited(client, inst_id):
         print(str(err))
 
 
-def is_controller_termination_protected(inst_id):
+def is_controller_termination_protected(inst_id: str) -> bool:
     """Check if the controller instance has API termination protection"""
     try:
         enabled = boto3.client("ec2").describe_instance_attribute(
@@ -72,7 +77,7 @@ def is_controller_termination_protected(inst_id):
     return False
 
 
-def verify_iam(controller_instanceobj):
+def verify_iam(controller_instanceobj: InstanceTypeDef) -> bool:
     """Verify IAM roles"""
     print("Verifying IAM roles ")
     iam_arn = controller_instanceobj.get("IamInstanceProfile", {}).get("Arn", "")
@@ -81,7 +86,9 @@ def verify_iam(controller_instanceobj):
     return True
 
 
-def get_user_data(ec2_client, controller_instanceobj) -> str:
+def get_user_data(
+    ec2_client: EC2Client, controller_instanceobj: InstanceTypeDef
+) -> str:
     try:
         user_data = ec2_client.describe_instance_attribute(
             InstanceId=controller_instanceobj["InstanceId"], Attribute="userData"

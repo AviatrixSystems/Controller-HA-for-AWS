@@ -6,12 +6,14 @@ import botocore
 from aviatrix_ha.errors.exceptions import AvxError
 
 
-def delete_resources(inst_id, delete_sns=True, detach_instances=True):
+def delete_resources(
+    inst_id: str | None, delete_sns: bool = True, detach_instances: bool = True
+) -> None:
     """Cloud formation cleanup"""
-    lt_name = asg_name = os.environ.get("AVIATRIX_TAG")
+    lt_name = asg_name = os.environ.get("AVIATRIX_TAG", "")
 
     asg_client = boto3.client("autoscaling")
-    if detach_instances:
+    if detach_instances and inst_id:
         try:
             # in case customer manually changed the MinSize to greater than 0.
             asg_client.update_auto_scaling_group(

@@ -2,7 +2,7 @@ import boto3
 import botocore
 
 
-def get_target_group_arns(inst_id):
+def get_target_group_arns(inst_id: str) -> list[str]:
     """Get target group arns the running ec2 instance is registered to."""
     elb_client = boto3.client("elbv2")
     target_groups = elb_client.describe_target_groups().get("TargetGroups", [])

@@ -6,7 +6,7 @@ import botocore
 from aviatrix_ha.errors.exceptions import AvxError
 
 
-def validate_subnets(subnet_list):
+def validate_subnets(subnet_list: list[str]) -> str:
     """Validates subnets"""
     vpc_id = os.environ.get("VPC_ID")
     if not vpc_id:
@@ -22,7 +22,7 @@ def validate_subnets(subnet_list):
     sub_aws_list = [sub["SubnetId"] for sub in response["Subnets"]]
     sub_list_new = [sub for sub in subnet_list if sub.strip() in sub_aws_list]
     if not sub_list_new:
-        ctrl_subnet = os.environ.get("CTRL_SUBNET")
+        ctrl_subnet = os.environ.get("CTRL_SUBNET", "")
         if ctrl_subnet not in sub_aws_list:
             raise AvxError(
                 "All subnets %s or controller subnet %s are not found in vpc %s"
