@@ -22,9 +22,6 @@ from aviatrix_ha.version import VERSION
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
-print("Loading function")
-
-
 class EventType(enum.Enum):
     """Enum for event types"""
 
@@ -37,6 +34,7 @@ class EventType(enum.Enum):
 def lambda_handler(event: dict[str, Any], context: Any) -> Any:
     """Entry point of the lambda script"""
     try:
+        print("Handling event: %s" % event)
         return _lambda_handler(event, context)
     except AvxError as err:
         print("Operation failed due to: " + str(err))

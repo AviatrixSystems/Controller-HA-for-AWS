@@ -497,8 +497,7 @@ def test_lambda_e2e_with_open_sg(e2e_test_env, with_error):
         aviatrix_ha._lambda_handler(
             _sns_message("autoscaling:EC2_INSTANCE_LAUNCH"), CONTEXT
         )
-        # TODO: Reenable check after https://github.com/getmoto/moto/issues/8735 is fixed.
-        # e2e_test_env.ensure_open_sg_rule(exists=True)
+        e2e_test_env.ensure_open_sg_rule(exists=True)
 
 
 @moto.mock_aws

@@ -209,6 +209,7 @@
           "Handler" : "aviatrix_ha.lambda_handler",
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
           "Runtime" : "python3.13",
+          "MemorySize": "256",
           "Timeout" : "900"
        }
     },

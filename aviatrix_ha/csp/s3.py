@@ -102,11 +102,13 @@ def verify_backup_file(controller_instanceobj: InstanceTypeDef) -> tuple[bool, s
         print("Verify Backup failed %s" % str(err))
         return False, ""
     else:
+        print("Successfully verified backup file %s" % s3_file)
         return True, s3_file
 
 
 def is_backup_file_is_recent(backup_file: str) -> bool:
     """Check if backup file is not older than MAXIMUM_BACKUP_AGE"""
+    print("Checking backup file %s age" % backup_file)
     try:
         s3c = boto3.client("s3", region_name=os.environ["S3_BUCKET_REGION"])
         try:
