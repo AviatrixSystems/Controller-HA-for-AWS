@@ -33,7 +33,9 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 3. Do a "Backup Now" from  the Settings->Maintenance->Backup restore page
 
-4. You can launch the cloud formation directly from [here](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3-us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha.json)
+4. Select the appropriate CloudFormation template based on your controller version:
+   * **Controller version 8.0.0 or later**: [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3.us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha-v3.json)
+   * **Controller version 3.4 to 7.x**: [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3-us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha.json)
 
 5. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHA`
 
