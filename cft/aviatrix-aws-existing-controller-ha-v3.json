@@ -85,6 +85,11 @@
       "Default": "False"
     }
   },
+  "Conditions" : {
+    "EnablePrivateAccess" : {
+      "Fn::Equals" : [{ "Ref" : "PrivateAccess" }, "True"]
+    }
+  },
   "Resources" :
   {
     "AviatrixRoleLambda" :
@@ -215,7 +220,17 @@
           "Role" : {"Fn::GetAtt": [ "AviatrixRoleLambda", "Arn" ]},
           "Runtime" : "python3.13",
           "MemorySize": "256",
-          "Timeout" : "900"
+          "Timeout" : "900",
+          "VpcConfig" : {
+            "Fn::If" : [
+              "EnablePrivateAccess",
+              {
+                "SecurityGroupIds" : [{ "Ref" : "SecurityGroupParam" }],
+                "SubnetIds" : { "Ref" : "SubnetParam" }
+              },
+              { "Ref" : "AWS::NoValue" }
+            ]
+          }
        }
     },
     "AviatrixPrivateRestApiGateway" : {
