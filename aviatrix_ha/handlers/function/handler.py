@@ -14,13 +14,25 @@ def handle_function_event(
 ) -> dict[str, Any]:
     """Handle lambda function event"""
     headers = event["headers"]
-    request = event["requestContext"].get("http", {})
-    method = request.get("method", "<unknown>")
-    path = request.get("path", "<unknown>")
+    request_context = event["requestContext"]
+
+    # To create a private API endpoint in API Gateway
+    # it must be a REST API, rather than an HTTP API or a WebSocket API.
+    # Maintain backward compatibility with HTTP API
+    if "http" in request_context:
+        request = request_context.get("http", {})
+        method = request.get("method", "<unknown>")
+        path = request.get("path", "<unknown>")
+        source_ip = request.get("sourceIp", "<unknown>")
+    else:
+        method = request_context.get("httpMethod", "<unknown>")
+        path = request_context.get("resourcePath", "<unknown>")
+        identity = request_context.get("identity", {})
+        source_ip = identity.get("sourceIp", "<unknown>")
 
     logger.info(
         "Function request from %s: method=%s path=%s user-agent=%s",
-        request.get("sourceIp", "<unknown>"),
+        source_ip,
         method,
         path,
         headers.get("user-agent", "<unknown>"),

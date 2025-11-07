@@ -9,7 +9,7 @@
       [
         {
           "Label" : { "default" : "Network Configuration" },
-          "Parameters" : [ "VPCParam", "SubnetParam" ]
+          "Parameters" : [ "VPCParam", "SubnetParam", "SecurityGroupParam" ]
         },
         {
           "Label" : { "default":"Aviatrix Controller Backup Configuration" },
@@ -20,6 +20,7 @@
       {
          "VPCParam" : { "default" : "Enter VPC of existing controller instance." },
          "SubnetParam" : { "default" : "Enter one or more subnets in different Availability zones within that VPC." },
+         "SecurityGroupParam": { "default" : "Enter the security group of existing controller instance." },
          "AviatrixTagParam": { "default" : "Enter Name tag of the existing Aviatrix Controller instance." },
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "NotifEmailParam": { "default" : "Enter an email to receive notifications for autoscaling group events" },
@@ -32,53 +33,57 @@
   "Parameters":
   {
     "VPCParam":
-      {
-        "Type": "AWS::EC2::VPC::Id",
-        "Description": "Select Your VPC"
-      },
-      "SubnetParam":
-      {
-        "Type": "List<AWS::EC2::Subnet::Id>",
-        "Description": "Select multiple Subnets. One of them must be the subnet where the existing controller is deployed on."
-      },
-      "AviatrixTagParam":
-      {
-        "Type": "String",
-        "Description": "Enter the existing controller instance name. It should contain only letters, numbers, hyphens, or underscores. No spaces allowed"
-      },
-
-      "CustomAviatrixAppRoleName":
-      {
-        "Type": "String",
-        "Description": "Enter the controller IAM APP role name if it is different than the default 'aviatrix-role-app'.",
-        "Default": "aviatrix-role-app"
-      },
-      "CustomAviatrixEC2RoleName":
-      {
-        "Type": "String",
-        "Description": "Enter the controller IAM EC2 role name if it is different than the default 'aviatrix-role-ec2'.",
-        "Default": "aviatrix-role-ec2"
-      },
-      "S3BucketBackupParam":
-      {
-        "Type": "String",
-        "Description": "Enter S3 Bucket which will be used to store backup files."
-      },
-      "NotifEmailParam":
-      {
-        "Type": "String",
-        "Description": "Enter an email to receive notifications for autoscaling group events"
-      },
-      "PrivateAccess":
-      {
-        "Type": "String",
-        "AllowedValues": [
-          "True",
-          "False"
-        ],
-        "Description": "Enter True to enable Private IP Access to the Controller from lambda. Please note that you have to attach the Lambda to the VPC subnet and ensure lambda has internet access via EIP/NAT",
-        "Default": "False"
-      }
+    {
+      "Type": "AWS::EC2::VPC::Id",
+      "Description": "Select Your VPC"
+    },
+    "SubnetParam":
+    {
+      "Type": "List<AWS::EC2::Subnet::Id>",
+      "Description": "Select multiple Subnets. One of them must be the subnet where the existing controller is deployed on."
+    },
+    "AviatrixTagParam":
+    {
+      "Type": "String",
+      "Description": "Enter the existing controller instance name. It should contain only letters, numbers, hyphens, or underscores. No spaces allowed"
+    },
+    "SecurityGroupParam":
+    {
+      "Type": "AWS::EC2::SecurityGroup::Id",
+      "Description": "Select the security group of the existing Aviatrix controller instance."
+    },
+    "CustomAviatrixAppRoleName":
+    {
+      "Type": "String",
+      "Description": "Enter the controller IAM APP role name if it is different than the default 'aviatrix-role-app'.",
+      "Default": "aviatrix-role-app"
+    },
+    "CustomAviatrixEC2RoleName":
+    {
+      "Type": "String",
+      "Description": "Enter the controller IAM EC2 role name if it is different than the default 'aviatrix-role-ec2'.",
+      "Default": "aviatrix-role-ec2"
+    },
+    "S3BucketBackupParam":
+    {
+      "Type": "String",
+      "Description": "Enter S3 Bucket which will be used to store backup files."
+    },
+    "NotifEmailParam":
+    {
+      "Type": "String",
+      "Description": "Enter an email to receive notifications for autoscaling group events"
+    },
+    "PrivateAccess":
+    {
+      "Type": "String",
+      "AllowedValues": [
+        "True",
+        "False"
+      ],
+      "Description": "Enter True to enable Private IP Access to the Controller from lambda. Please note that you have to attach the Lambda to the VPC subnet and ensure lambda has internet access via EIP/NAT",
+      "Default": "False"
+    }
   },
   "Resources" :
   {
@@ -213,27 +218,94 @@
           "Timeout" : "900"
        }
     },
-    "AviatrixLambdaUrl": {
-        "Type" : "AWS::Lambda::Url",
-        "Properties" : {
-            "AuthType" : "NONE",
-            "TargetFunctionArn" : { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] }
+    "AviatrixPrivateRestApiGateway" : {
+      "Type" : "AWS::ApiGateway::RestApi",
+      "Properties" : {
+        "Name": {"Fn::Join": ["-", [{"Ref": "AviatrixTagParam"}, "ha-v3-api"]]},
+        "Description" : "Private API Gateway for Aviatrix HA",
+        "EndpointConfiguration" : {
+          "Types": ["PRIVATE"],
+          "VpcEndpointIds" : [{ "Ref" : "ApiGatewayVpcEndpoint" }]
+        },
+        "Policy" : {
+          "Version" : "2012-10-17",
+          "Statement" : [
+            {
+              "Effect" : "Allow",
+              "Principal" : "*",
+              "Action" : "execute-api:Invoke",
+              "Resource" : "execute-api:/*",
+              "Condition" : {
+                "StringEquals" : {
+                  "aws:SourceVpce" : { "Ref" : "ApiGatewayVpcEndpoint" }
+                }
+              }
+            }
+          ]
         }
+      }
     },
-    "AviatrixLambdaUrlPermissions": {
-        "Type": "AWS::Lambda::Permission",
-        "Properties": {
-            "Action": "lambda:InvokeFunctionUrl",
-            "FunctionName": { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] },
-            "FunctionUrlAuthType": "NONE",
-            "Principal": "*"
+    "ApiGatewayResource" : {
+      "Type" : "AWS::ApiGateway::Resource",
+      "Properties" : {
+        "ParentId" : { "Fn::GetAtt" : ["AviatrixPrivateRestApiGateway", "RootResourceId"] },
+        "PathPart" : "controller_version",
+        "RestApiId" : { "Ref" : "AviatrixPrivateRestApiGateway" }
+      }
+    },
+    "ApiGatewayMethod" : {
+      "Type" : "AWS::ApiGateway::Method",
+      "Properties" : {
+        "RestApiId" : { "Ref" : "AviatrixPrivateRestApiGateway" },
+        "ResourceId" : { "Ref" : "ApiGatewayResource" },
+        "HttpMethod" : "GET",
+        "AuthorizationType" : "NONE",
+        "Integration" : {
+          "Type" : "AWS_PROXY",
+          "IntegrationHttpMethod" : "POST",
+          "Uri" : { "Fn::Sub" : "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AviatrixLambda.Arn}/invocations" }
         }
+      }
+    },
+    "ApiGatewayDeployment" : {
+      "Type" : "AWS::ApiGateway::Deployment",
+      "DependsOn" : "ApiGatewayMethod",
+      "Properties" : {
+        "Description" : "Aviatrix API Gateway deployment",
+        "RestApiId" : { "Ref" : "AviatrixPrivateRestApiGateway" },
+        "StageName" : "prod"
+      }
+    },
+    "ApiGatewayPermission" : {
+      "Type" : "AWS::Lambda::Permission",
+      "Properties" : {
+        "Action" : "lambda:InvokeFunction",
+        "FunctionName" : { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] },
+        "Principal" : "apigateway.amazonaws.com",
+        "SourceArn" : { "Fn::Sub" : "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AviatrixPrivateRestApiGateway}/*" }
+      }
+    },
+    "ApiGatewayVpcEndpoint" : {
+      "Type" : "AWS::EC2::VPCEndpoint",
+      "Properties" : {
+        "SecurityGroupIds" : [{ "Ref" : "SecurityGroupParam" }],
+        "ServiceName" : { "Fn::Sub" : "com.amazonaws.${AWS::Region}.execute-api" },
+        "SubnetIds" : { "Ref" : "SubnetParam" },
+        "Tags" : [
+          {
+            "Key" : "Name",
+            "Value" : { "Ref" : "AviatrixTagParam" }
+          }
+        ],
+        "VpcEndpointType" : "Interface",
+        "VpcId" : { "Ref" : "VPCParam" }
+      }
     },
     "SetupHA": {
       "Type": "Custom::SetupHA",
       "Properties": {
         "ServiceToken": { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] },
-        "ServiceURL": { "Fn::GetAtt" : ["AviatrixLambdaUrl", "FunctionUrl"] }
+        "ServiceURL": { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/controller_version" }
       }
     }
   },
@@ -248,6 +320,15 @@
     {
       "Description": "SUBNET_LIST",
       "Value" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]}
+    },
+    "VpcEndpointId" :
+    {
+      "Description": "VPC endpoint ID",
+      "Value": { "Ref" : "ApiGatewayVpcEndpoint" }
+    },
+    "AviatrixPrivateApiEndpoint" : {
+      "Description" : "Private API Gateway Endpoint",
+      "Value" : { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod" }
     }
   }
 }
