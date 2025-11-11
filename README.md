@@ -96,6 +96,12 @@ To do so, go to AWS KMS->Customer managed keys->select the key and add the "AWSS
 9. What do I need to do after I change the controller name?
    - Please delete the CFT stack and then create a new CFT stack using the new controller name.
 
+
+### Troubleshooting
+1. What should I do if I saw this error `[Errno 2] No such file or directory: 'python'` when running poetry commands?
+   - `sudo apt install python-is-python3` should fix the issue
+
+
 ### Changelog
 
 The changes between various releases can be viewed from [here](https://github.com/AviatrixSystems/Controller-HA-for-AWS/releases)

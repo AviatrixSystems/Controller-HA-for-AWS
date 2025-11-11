@@ -1,11 +1,13 @@
 SRC_FILES = $(shell find aviatrix_ha -name "*.py")
 
 bin/aviatrix_ha_v3.zip: $(SRC_FILES) pyproject.toml poetry.lock
+	@mkdir -p bin
 	@rm -rf $@ .venv-lambda
 	poetry bundle venv --only=main .venv-lambda
 	(cd .venv-lambda/lib/python*/site-packages/ && zip -r ../../../../$@ . -x '*.pyc' -x '__pycache__' -x '*.so')
 
 bin/aviatrix_ha_v3_dev.zip: $(SRC_FILES) pyproject.toml poetry.lock
+	@mkdir -p bin
 	@rm -rf $@ .venv-lambda
 	poetry bundle venv --only=main .venv-lambda
 	(cd .venv-lambda/lib/python*/site-packages/ && touch dev_flag && zip -r ../../../../$@ . -x '*.pyc' -x '__pycache__' -x '*.so')
