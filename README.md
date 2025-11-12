@@ -1,15 +1,21 @@
 ## Aviatrix - AWS CloudFormation template for HA on an Existing Aviatrix controller.
 
 ### Description
-This guide assumes you already have an Aviatrix Controller running and has been configured. If you don't, launch a controller through instructions available at [Aviatrix Controller Startup Guide](https://docs.aviatrix.com/StartUpGuides/aviatrix-cloud-controller-startup-guide.html)
+This guide assumes you already have an Aviatrix Controller running and has been configured. If you don't, launch a controller through instructions available at [Aviatrix Controller Startup Guide](https://docs.aviatrix.com/documentation/latest/getting-started/deploy-controller.html)
 
 This CloudFormation script will create the following:
 
+Core HA Components
 * An Aviatrix Autoscaling group with size 1 with a new security group
 * An SNS topic with same name as of existing controller instance.
 * An email subscription to the SNS topic(optional)
 * A lambda function for setting up HA and restoring configuration automatically.
 * An Aviatrix Role for Lambda with corresponding role policy with required permissions.
+
+Private API Endpoint
+* VPC Endpoint
+* Private API Gateway
+The Controller can call the Lambda function's `/controller_version` endpoint privately (without going over public internet). This endpoint is restricted to access from the VPC Endpoint only
 
 This script is only supported for Aviatrix Controller version >= 3.4
 ### Pre-requisites:
@@ -84,7 +90,7 @@ This script is only supported for Aviatrix Controller version >= 3.4
    
    - All logs related to H/A can be found in AWS Cloudwatch under the log group <controller_name>-ha
    
-7. How do I make lambda talk to controller privately within the VPC?
+7. How do I make lambda talk to controller privately within the VPC? (**Advanced, Manual Setup required**)
     
    - Launch CFT with Private access set to True. Attach lambda to the VPC from the AWS console. Ensure that the VPC that you have attached the lambda to has internet access via NAT gateway or VPC endpoints. You can also ensure that lambda has internet access by attaching an EIP(Elastic IP) to the lambda ENI(Network Interface). Please ensure that everything is reverted before you destroy the stack. Otherwise the lambda will not have internet access to respond to the CFT(CFT may get stuck on destroy). Please note that it takes around 15 minutes for lambda to get attached to the VPC and to be able to talk to the controller. Please wait for this duration of 15 minutes, after the VPC attachment, before attempting to test the HA script. 
 
