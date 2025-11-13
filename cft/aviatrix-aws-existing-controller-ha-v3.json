@@ -302,7 +302,7 @@
         "VpcId" : { "Ref" : "VPCParam" }
       }
     },
-    "VPCEndpointSecurityGroupIngress" : {
+    "VpcEndpointSecurityGroupIngress" : {
       "Type" : "AWS::EC2::SecurityGroupIngress",
       "Properties" : {
         "GroupId" : { "Ref" : "SecurityGroupParam" },
