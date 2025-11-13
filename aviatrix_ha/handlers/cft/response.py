@@ -20,7 +20,7 @@ def send_response(
         "Reason": str(reason)
         + ". See the details in CloudWatch Log Stream: "
         + context.log_stream_name,
-        "PhysicalResourceId": physical_resource_id or context.log_stream_name,
+        "PhysicalResourceId": physical_resource_id,
         "StackId": event["StackId"],
         "RequestId": event["RequestId"],
         "LogicalResourceId": event["LogicalResourceId"],

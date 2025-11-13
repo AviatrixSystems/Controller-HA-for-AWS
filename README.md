@@ -67,22 +67,9 @@ This script is only supported for Aviatrix Controller version >= 3.4
 
 ### Terraform Users: Important Configuration Note
 
-**Action Required:** If you manage your infrastructure with Terraform, you must explicitly define the self-referencing security group rule in your Terraform code. Otherwise, running `terraform apply` may remove the rule created by this CloudFormation stack, breaking HA failover.
+This CloudFormation stack creates a self-referencing security group ingress rule (HTTPS from the security group to itself) to enable Private API Gateway communication during HA failover.
 
-Add this to your Terraform configuration:
-```hcl
-resource "aws_security_group_rule" "vpc_endpoint_self_reference" {
-  type                     = "ingress"
-  from_port                = 443
-  to_port                  = 443
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.controller.id
-  security_group_id        = aws_security_group.controller.id
-  description              = "VPC Endpoint - Private API Gateway access"
-}
-```
-
-This rule is important for cloud-init to communicate with the Private API Gateway during controller bootstrap.
+**If you manage the controller's security group with Aviatrix terraform module**, the next time it's applied, this rule will be deleted, which will break HA functionality.
 
 
 ### FAQ

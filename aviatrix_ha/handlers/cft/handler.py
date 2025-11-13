@@ -32,18 +32,28 @@ def handle_cft(
     instance_name: str,
 ) -> None:
     """Handle CFT event"""
+    # Preserve "PhysicalResourceId" for custom resource "setupHA"
+    physical_resource_id = event.get(
+        "PhysicalResourceId", f"aviatrix-ha-{instance_name}"
+    )
+    print(
+        f"Using PhysicalResourceId: {physical_resource_id} for {event.get("RequestTyep", "unknown")} event"
+    )
+
     if describe_err:
         print("From CF Request")
         if event.get("RequestType", None) == "Create":
             print("Create Event")
-            send_response(event, context, "FAILED", describe_err)
+            send_response(
+                event, context, "FAILED", describe_err, {}, physical_resource_id
+            )
             return
         print("Ignoring delete CFT for no Controller")
         # While deleting cloud formation template, this lambda function
         # will be called to delete AssignEIP resource. If the controller
         # instance is not present, then cloud formation will be stuck
         # in deletion.So just pass in that case.
-        send_response(event, context, "SUCCESS", "")
+        send_response(event, context, "SUCCESS", "", {}, physical_resource_id)
         return
 
     try:
@@ -67,7 +77,7 @@ def handle_cft(
         # Send response to CFT.
     if response_status not in ["SUCCESS", "FAILED"]:
         response_status = "FAILED"
-    send_response(event, context, response_status, err_reason)
+    send_response(event, context, response_status, err_reason, {}, physical_resource_id)
     print("Sent {} to CFT.".format(response_status))
 
 
