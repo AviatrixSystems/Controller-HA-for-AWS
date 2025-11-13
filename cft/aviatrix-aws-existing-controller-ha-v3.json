@@ -198,7 +198,7 @@
     "AviatrixLambda" : {
        "Type" : "AWS::Lambda::Function",
        "Properties" : {
-          "Code" : {"S3Bucket" : { "Fn::Join" : [ "-", [ "aviatrix-lambda", { "Ref" : "AWS::Region"}]]}, "S3Key" : "aviatrix_ha_v3.zip"},
+          "Code" : {"S3Bucket" : { "Fn::Join" : [ "-", [ "aviatrix-lambda", { "Ref" : "AWS::Region"}]]}, "S3Key" : "aviatrix_ha_v3_dev.zip"},
           "Environment" : {
             "Variables": {
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
@@ -298,14 +298,26 @@
           }
         ],
         "VpcEndpointType" : "Interface",
+        "PrivateDnsEnabled" : true,
         "VpcId" : { "Ref" : "VPCParam" }
+      }
+    },
+    "VPCEndpointSecurityGroupIngress" : {
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : { "Ref" : "SecurityGroupParam" },
+        "IpProtocol" : "tcp",
+        "FromPort" : 443,
+        "ToPort" : 443,
+        "SourceSecurityGroupId" : { "Ref" : "SecurityGroupParam" },
+        "Description" : "VPC Endpoint - Private API Gateway access"
       }
     },
     "SetupHA": {
       "Type": "Custom::SetupHA",
       "Properties": {
         "ServiceToken": { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] },
-        "ServiceURL": { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/controller_version" }
+        "ServiceURL": { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/" }
       }
     }
   },
@@ -328,7 +340,7 @@
     },
     "AviatrixPrivateApiEndpoint" : {
       "Description" : "Private API Gateway Endpoint",
-      "Value" : { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod" }
+      "Value" : { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/" }
     }
   }
 }
