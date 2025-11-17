@@ -40,7 +40,9 @@ def disable_open_sg_rules(client: EC2Client, instance_id: str) -> list[dict[str,
                 or sgr["ToPort"] < 443
             ):
                 continue
-            if sgr["CidrIpv4"] != "0.0.0.0/0":
+
+            cidr = sgr.get("CidrIpv4")
+            if not cidr or cidr != "0.0.0.0/0":
                 continue
 
             client.modify_security_group_rules(

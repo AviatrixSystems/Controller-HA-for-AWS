@@ -35,7 +35,9 @@ logger.setLevel(logging.DEBUG)
 
 
 @terraform("e2e_controller", scope="session")
-@pytest.mark.skipif(os.environ.get("TF_VAR_customer_id") is None, reason="TF_VAR_customer_id is not set")
+@pytest.mark.skipif(
+    os.environ.get("TF_VAR_customer_id") is None, reason="TF_VAR_customer_id is not set"
+)
 def test_e2e_controller(e2e_controller):
     instance_id = e2e_controller.outputs["controller_instance_id"]["value"]
     instance_name = e2e_controller.outputs["controller_name"]["value"]
@@ -56,14 +58,24 @@ def test_e2e_controller(e2e_controller):
         )
         # Get the security group id
         sg_id = rsp["Reservations"][0]["Instances"][0]["SecurityGroups"][0]["GroupId"]
-        logger.info("Controller instance found: %s, Instance ID: %s, EIP: %s, SG ID: %s",
-                    instance_name, instance_id, eip, sg_id)
-        ec2.authorize_security_group_ingress(GroupId=sg_id, IpPermissions=[{
-            "IpProtocol": "tcp",
-            "FromPort": 443,
-            "ToPort": 443,
-            "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
-        }])
+        logger.info(
+            "Controller instance found: %s, Instance ID: %s, EIP: %s, SG ID: %s",
+            instance_name,
+            instance_id,
+            eip,
+            sg_id,
+        )
+        ec2.authorize_security_group_ingress(
+            GroupId=sg_id,
+            IpPermissions=[
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 443,
+                    "ToPort": 443,
+                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                }
+            ],
+        )
         ec2.modify_instance_attribute(
             InstanceId=instance_id, DisableApiTermination={"Value": False}
         )

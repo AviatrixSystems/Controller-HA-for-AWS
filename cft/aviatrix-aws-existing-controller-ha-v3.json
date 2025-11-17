@@ -316,7 +316,7 @@
       "Type": "Custom::SetupHA",
       "Properties": {
         "ServiceToken": { "Fn::GetAtt" : ["AviatrixLambda", "Arn"] },
-        "ServiceURL": { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/" }
+        "ServiceURL": { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}-${ApiGatewayVpcEndpoint}.execute-api.${AWS::Region}.amazonaws.com/prod/" }
       }
     }
   },
@@ -339,7 +339,7 @@
     },
     "AviatrixPrivateApiEndpoint" : {
       "Description" : "Private API Gateway Endpoint",
-      "Value" : { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/" }
+      "Value" : { "Fn::Sub" : "https://${AviatrixPrivateRestApiGateway}-${ApiGatewayVpcEndpoint}.execute-api.${AWS::Region}.amazonaws.com/prod/" }
     }
   }
 }

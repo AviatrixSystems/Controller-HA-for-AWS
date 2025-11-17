@@ -28,12 +28,7 @@ class TestCheckAmiId(unittest.TestCase):
                         "us-east-2": "ami-bbbbb",
                     }
                 },
-                "g4": {
-                    "amd64": {
-                        "us-east-1": "ami-ccccc", 
-                        "us-east-2": "ami-ddddd"
-                    }
-                }
+                "g4": {"amd64": {"us-east-1": "ami-ccccc", "us-east-2": "ami-ddddd"}},
             },
         )
         self.assertTrue(ami.check_ami_id("ami-03c5c2226878f03c4"))

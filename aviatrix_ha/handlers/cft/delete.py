@@ -6,6 +6,18 @@ import botocore
 from aviatrix_ha.errors.exceptions import AvxError
 
 
+def delete_launch_template(lt_name: str) -> None:
+    try:
+        boto3.client("ec2").delete_launch_template(LaunchTemplateName=lt_name)
+    except botocore.exceptions.ClientError as err:
+        if "InvalidLaunchTemplateName.NotFoundException" in str(err):
+            print("Launch template already deleted")
+        else:
+            print(str(err))
+    else:
+        print("Launch template deleted")
+
+
 def delete_resources(
     inst_id: str | None, delete_sns: bool = True, detach_instances: bool = True
 ) -> None:
@@ -28,15 +40,8 @@ def delete_resources(
             print("Controller instance detached from autoscaling group")
         except botocore.exceptions.ClientError as err:
             print(str(err))
-    try:
-        boto3.client("ec2").delete_launch_template(LaunchTemplateName=lt_name)
-    except botocore.exceptions.ClientError as err:
-        if "InvalidLaunchTemplateName.NotFoundException" in str(err):
-            print("Launch template already deleted")
-        else:
-            print(str(err))
-    else:
-        print("Launch template deleted")
+
+    delete_launch_template(lt_name)
 
     try:
         asg_client.delete_auto_scaling_group(
