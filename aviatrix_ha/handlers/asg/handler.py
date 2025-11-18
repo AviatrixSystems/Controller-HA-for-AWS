@@ -64,4 +64,5 @@ def handle_sns_event(
             context,
             user_data,
             attach_instance=False,
+            is_update=False,
         )

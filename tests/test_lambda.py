@@ -315,7 +315,9 @@ avx-controller:
                     if ip_range["CidrIp"] == "0.0.0.0/0":
                         has_open_rule = True
                         if not exists:
-                            pytest.fail(f"Security group {sg['GroupId']} has an open rule: {perm}")
+                            pytest.fail(
+                                f"Security group {sg['GroupId']} has an open rule: {perm}"
+                            )
                         break
         if not has_open_rule and exists:
             pytest.fail("No security group has an open rule.")
@@ -500,8 +502,38 @@ def test_lambda_e2e_with_open_sg(e2e_test_env, with_error):
         e2e_test_env.ensure_open_sg_rule(exists=True)
 
 
+@pytest.mark.parametrize(
+    "event_data",
+    [
+        (
+            # HTTP API format (Function URL - Legacy)
+            {
+                "headers": {"user-agent": "pytest"},
+                "requestContext": {
+                    "http": {
+                        "method": "GET",
+                        "path": "/controller_version",
+                        "sourceIp": "10.20.30.40",
+                    }
+                },
+            }
+        ),
+        (
+            # REST API format (Private API Gateway - Current)
+            {
+                "headers": {"user-agent": "pytest"},
+                "requestContext": {
+                    "httpMethod": "GET",
+                    "resourcePath": "/controller_version",
+                    "identity": {"sourceIp": "10.20.30.40"},
+                },
+            }
+        ),
+    ],
+    ids=["http_api", "rest_api"],
+)
 @moto.mock_aws
-def test_lambda_function():
+def test_lambda_function(event_data):
     """Test the lambda function returns the controller version fetched from S3"""
     os.environ["S3_BUCKET_REGION"] = "us-west-2"
     s3 = boto3.client("s3")
@@ -519,10 +551,7 @@ def test_lambda_function():
         Body=b"some data",
     )
 
-    event = {
-        "headers": {"user-agent": "pytest"},
-        "requestContext": {"http": {"method": "GET", "path": "/controller_version"}},
-    }
-    result = aviatrix_ha._lambda_handler(event, CONTEXT)
+    result = aviatrix_ha._lambda_handler(event_data, CONTEXT)
     assert result["statusCode"] == 200
     assert result["body"] == "8.0.0-1000.1234"
+    assert result["headers"]["Content-Type"] == "text/plain"

@@ -22,6 +22,7 @@ from aviatrix_ha.version import VERSION
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
+
 class EventType(enum.Enum):
     """Enum for event types"""
 

@@ -32,18 +32,27 @@ def handle_cft(
     instance_name: str,
 ) -> None:
     """Handle CFT event"""
+    # Preserve "PhysicalResourceId" for custom resource "setupHA"
+    physical_resource_id = event.get(
+        "PhysicalResourceId", f"aviatrix-ha-{instance_name}"
+    )
+    request_type = event.get("RequestType", None)
+    print(f"Using PhysicalResourceId: {physical_resource_id} for {request_type} event")
+
     if describe_err:
         print("From CF Request")
-        if event.get("RequestType", None) == "Create":
+        if request_type == "Create":
             print("Create Event")
-            send_response(event, context, "FAILED", describe_err)
+            send_response(
+                event, context, "FAILED", describe_err, {}, physical_resource_id
+            )
             return
         print("Ignoring delete CFT for no Controller")
         # While deleting cloud formation template, this lambda function
         # will be called to delete AssignEIP resource. If the controller
         # instance is not present, then cloud formation will be stuck
         # in deletion.So just pass in that case.
-        send_response(event, context, "SUCCESS", "")
+        send_response(event, context, "SUCCESS", "", {}, physical_resource_id)
         return
 
     try:
@@ -64,10 +73,10 @@ def handle_cft(
         print(traceback.format_exc())
         response_status = "FAILED"
 
-        # Send response to CFT.
+    # Send response to CFT.
     if response_status not in ["SUCCESS", "FAILED"]:
         response_status = "FAILED"
-    send_response(event, context, response_status, err_reason)
+    send_response(event, context, response_status, err_reason, {}, physical_resource_id)
     print("Sent {} to CFT.".format(response_status))
 
 
@@ -144,6 +153,43 @@ def _handle_cloud_formation_request(
         user_data = get_user_data(ec2_client, controller_instanceobj)
         sgs = [sg_["GroupId"] for sg_ in controller_instanceobj["SecurityGroups"]]
         setup_ha(ami_id, inst_type, inst_id, key_name, sgs, context, user_data)
+
+    elif event["RequestType"] == "Update":
+        print("Handling Update request")
+        try:
+            # Update SERVICE_URL in Lambda environment
+            new_service_url = event["ResourceProperties"].get("ServiceURL")
+            if new_service_url != os.environ.get("SERVICE_URL"):
+                os.environ["SERVICE_URL"] = new_service_url
+                update_env_dict(
+                    lambda_client, context, {"SERVICE_URL": new_service_url}
+                )
+
+            # Recreate launch template and update ASG (SNS stays unchanged)
+            ami_id = controller_instanceobj["ImageId"]
+            inst_type = controller_instanceobj["InstanceType"]
+            key_name = controller_instanceobj.get("KeyName", "")
+            user_data = get_user_data(ec2_client, controller_instanceobj)
+            sgs = [sg_["GroupId"] for sg_ in controller_instanceobj["SecurityGroups"]]
+
+            # inst_id set to None with cft update, read from environment variables
+            setup_ha(
+                ami_id,
+                inst_type,
+                None,
+                key_name,
+                sgs,
+                context,
+                user_data,
+                attach_instance=False,
+                is_update=True,
+            )
+            print("Update completed successfully")
+
+        except Exception as err:
+            err_reason = f"Failed to handle update: {str(err)}"
+            print(traceback.format_exc())
+            return "FAILED", err_reason
 
     elif event["RequestType"] == "Delete":
         try:
