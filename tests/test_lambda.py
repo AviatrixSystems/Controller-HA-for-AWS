@@ -36,7 +36,7 @@ MOTO_AMI_ID = "ami-12c6146b"
 
 @pytest.fixture(autouse=True)
 def setup_env(monkeypatch):
-    # defined in cft/aviatrix-aws-existing-controller-ha-v3.json
+    # defined in cft/aviatrix-aws-existing-controller-ha-v4.json
     monkeypatch.setenv("AVIATRIX_TAG", HA_TAG)
     monkeypatch.setenv("AWS_ROLE_APP_NAME", "aviatrix-role-app")
     monkeypatch.setenv("AWS_ROLE_EC2_NAME", "aviatrix-role-ec2")

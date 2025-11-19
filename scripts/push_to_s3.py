@@ -25,12 +25,12 @@ from aviatrix_ha.common.constants import DEV_FLAG
 
 
 BUCKET_PREFIX = "aviatrix-lambda-"
-LAMBDA_ZIP_FILE = "bin/aviatrix_ha_v3.zip"
-LAMBDA_ZIP_DEV_FILE_STR = "aviatrix_ha_v3_dev.zip"
+LAMBDA_ZIP_FILE = "bin/aviatrix_ha_v4.zip"
+LAMBDA_ZIP_DEV_FILE_STR = "aviatrix_ha_v4_dev.zip"
 
 CFT_BUCKET_NAME = "aviatrix-cloudformation-templates"
 CFT_BUCKET_REGION = "us-west-2"
-CFT_FILE_NAME = "cft/aviatrix-aws-existing-controller-ha-v3.json"
+CFT_FILE_NAME = "cft/aviatrix-aws-existing-controller-ha-v4.json"
 
 
 def _validate_inputs(args: argparse.Namespace):

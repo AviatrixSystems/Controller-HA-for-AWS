@@ -17,7 +17,7 @@ resource "aws_cloudformation_stack" "controller_ha" {
         NotifEmailParam = "nobody@aviatrix.com"
     } 
 
-    template_body = file("${path.module}/aviatrix-aws-existing-controller-ha-v3-dev.json")
+    template_body = file("${path.module}/aviatrix-aws-existing-controller-ha-v4-dev.json")
 
     capabilities = [
         "CAPABILITY_NAMED_IAM",
