@@ -40,8 +40,8 @@ This script is only supported for Aviatrix Controller version >= 3.4
 3. Do a "Backup Now" from  the Settings->Maintenance->Backup restore page
 
 4. Select the appropriate CloudFormation template based on your controller version:
-   * **Controller version 8.0.0 or later**: [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3.us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha-v4.json)
-   * **Controller version 3.4 to 7.x**: [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3-us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha.json)
+   * **Controller version 7.2 or later**: [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3.us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha-v4.json)
+   * **Controller version 3.4 to 7.1**: [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3-us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha.json)
 
 5. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHA`
 
@@ -108,6 +108,9 @@ To do so, go to AWS KMS->Customer managed keys->select the key and add the "AWSS
 
 9. What do I need to do after I change the controller name?
    - Please delete the CFT stack and then create a new CFT stack using the new controller name.
+
+10. How do I update from v3 to v4 CloudFormation template?
+   - If you are currently running a 7.2+ AWS Controller AMI with the v3 CloudFormation stack, you can update to the v4 template to address the security issue with the public Lambda function URL being over-permissive. Starting from v4, the public Lambda function URL has been replaced with a private API Gateway endpoint accessed via VPC PrivateLink. You can perform a direct stack update using the v4 launch template, which is faster than deleting and recreating the stack. However, if there are any changes to the controller configuration, deleting the current stack and recreating a new stack is recommended.
 
 
 ### Troubleshooting
