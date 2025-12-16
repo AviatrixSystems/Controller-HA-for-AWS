@@ -1,4 +1,4 @@
-""" Aviatrix Controller HA Lambda script """
+"""Aviatrix Controller HA Lambda script"""
 
 # pylint: disable=too-many-lines,too-many-locals,too-many-branches,too-many-return-statements
 # pylint: disable=too-many-statements,too-many-arguments,broad-except
@@ -13,7 +13,7 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from aviatrix_ha.csp.instance import get_controller_instance
 from aviatrix_ha.csp.lambda_c import update_env_dict
-from aviatrix_ha.csp.sg import restore_security_group_access
+from aviatrix_ha.csp.sg import remove_temp_security_group_access
 from aviatrix_ha.errors.exceptions import AvxError
 from aviatrix_ha.handlers.asg.handler import handle_sns_event
 from aviatrix_ha.handlers.cft.handler import handle_cft
@@ -80,7 +80,7 @@ def _lambda_handler(event: dict[str, Any], context: Any) -> Any:
             f"Lambda probably did not complete last time. Reverting {tmp_sg}/{tmp_sgr}"
         )
         update_env_dict(lambda_client, context, {"TMP_SG_GRP": "", "TMP_SG_RULE": ""})
-        restore_security_group_access(client, tmp_sg, tmp_sgr)
+        remove_temp_security_group_access(client, tmp_sg, tmp_sgr)
     instance_name = os.environ.get("AVIATRIX_TAG", "")
     inst_id = os.environ.get("INST_ID", "")
     print(f"Trying describe with name {instance_name} and ID {inst_id}")
