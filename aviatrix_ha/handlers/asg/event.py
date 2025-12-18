@@ -178,12 +178,15 @@ class HAEventHandler:
         return HAStepResult.CONTINUE
 
     def create_temp_account_step(self) -> HAStepResult:
-        """Need to retry because initial_setup_step takes some time"""
+        """Create a temporary account needed for backup restore.
+
+        Retries until deadline since initial_setup may still be completing.
+        """
         logger.info("Creating temporary account for config restore")
         while not self.deadline_exceeded():
             try:
                 response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
-                if response_json.get("return", False) is True:
+                if response_json.get("return"):
                     logger.info("Successfully created temp account for restore")
                     return HAStepResult.CONTINUE
                 logger.warning(
@@ -192,7 +195,7 @@ class HAEventHandler:
                     WAIT_DELAY,
                 )
             except Exception as err:
-                logger.exception(
+                logger.warning(
                     "Failed to create temp account due to %s: retrying in %s",
                     err,
                     WAIT_DELAY,
