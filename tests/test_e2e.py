@@ -17,6 +17,7 @@ What does this test do:
 4. Verifies that the new controller is up and running by logging in to the
    controller. The login will only succeed if backup/restore succeeds.
 """
+
 import datetime
 import logging
 import os
@@ -26,9 +27,7 @@ import boto3
 import pytest
 from pytest_terraform import terraform
 
-
 from aviatrix_ha.api import client
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -102,7 +101,7 @@ def test_e2e_controller(e2e_controller):
         while datetime.datetime.now() < deadline:
             try:
                 api_client.login("admin", admin_password)
-                logging.info("Successfully logged in to controller")
+                logger.info("Successfully logged in to controller")
                 break
             except Exception as err:
                 logger.info("Failed to login: %s", err)
