@@ -15,6 +15,7 @@ Core HA Components
 Private API Endpoint
 * VPC Endpoint
 * Private API Gateway
+Need to save a security group rule for `VpcEndpointSecurityGroupIngress`
 The Controller can call the Lambda function's `/controller_version` endpoint privately (without going over public internet). This endpoint is restricted to access from the VPC Endpoint only
 
 This script is only supported for Aviatrix Controller version >= 3.4
