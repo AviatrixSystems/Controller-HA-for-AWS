@@ -1,7 +1,7 @@
-from enum import Enum, auto
 import logging
 import os
 import time
+from enum import Enum, auto
 from typing import Any
 
 from types_boto3_ec2.client import EC2Client
@@ -12,8 +12,8 @@ from aviatrix_ha.api import client
 from aviatrix_ha.api.external.ip import get_public_ip
 from aviatrix_ha.common.constants import (
     HANDLE_HA_TIMEOUT,
-    WAIT_DELAY,
     TEMP_ACCOUNT_NAME,
+    WAIT_DELAY,
 )
 from aviatrix_ha.csp.eip import assign_eip
 from aviatrix_ha.csp.instance import enable_t2_unlimited
@@ -25,11 +25,10 @@ from aviatrix_ha.csp.s3 import (
 from aviatrix_ha.csp.sg import (
     disable_open_sg_rules,
     enable_open_sg_rules,
-    restore_security_group_access,
+    remove_temp_security_group_access,
     temp_add_security_group_access,
 )
 from aviatrix_ha.errors.exceptions import AvxError
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -215,7 +214,7 @@ class HAEventHandler:
     def remove_temp_sg_rule_step(self) -> HAStepResult:
         if not os.environ.get("TMP_SG_GRP") or not os.environ.get("TMP_SG_RULE"):
             return HAStepResult.CONTINUE
-        restore_security_group_access(
+        remove_temp_security_group_access(
             self.ec2_client, os.environ["TMP_SG_GRP"], os.environ["TMP_SG_RULE"]
         )
         update_env_dict(
