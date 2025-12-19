@@ -12,10 +12,12 @@ Core HA Components
 * A lambda function for setting up HA and restoring configuration automatically.
 * An Aviatrix Role for Lambda with corresponding role policy with required permissions.
 
-Private API Endpoint
-* VPC Endpoint
-* Private API Gateway
-The Controller can call the Lambda function's `/controller_version` endpoint privately (without going over public internet). This endpoint is restricted to access from the VPC Endpoint only
+Private API Endpoint (v4 Template)
+* VPC Endpoint - Creates a VPC PrivateLink endpoint for secure, private API Gateway access
+* Private API Gateway - REST API accessible only from within your VPC via VPC Endpoint
+* Self-referencing Security Group Rule - Allows controller instances to communicate with the VPC Endpoint
+* The controller instances can call the Lambda function's `/controller_version` endpoint privately (without traversing the public internet)
+* Access is restricted to the VPC Endpoint only - no public internet access
 
 This script is only supported for Aviatrix Controller version >= 3.4
 ### Pre-requisites:
@@ -40,8 +42,8 @@ This script is only supported for Aviatrix Controller version >= 3.4
 3. Do a "Backup Now" from  the Settings->Maintenance->Backup restore page
 
 4. Select the appropriate CloudFormation template based on your controller version:
-   * **Controller version 7.2 or later**: [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3.us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha-v4.json)
-   * **Controller version 3.4 to 7.1**: [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3-us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha.json)
+   * **Controller version 7.2 or later (Recommended):** [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3.us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha-v4.json)
+   * **Controller version 3.4 to 7.1:** [Launch template](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=AviatrixHA&templateURL=https://aviatrix-cloudformation-templates.s3-us-west-2.amazonaws.com/aviatrix-aws-existing-controller-ha.json)
 
 5. On the Stack Name textbox, Name your Stack -> Something like `AviatrixHA`
 
@@ -110,7 +112,8 @@ To do so, go to AWS KMS->Customer managed keys->select the key and add the "AWSS
    - Please delete the CFT stack and then create a new CFT stack using the new controller name.
 
 10. How do I update from v3 to v4 CloudFormation template?
-   - If you are currently running a 7.2+ AWS Controller AMI with the v3 CloudFormation stack, you can update to the v4 template to address the security issue with the public Lambda function URL being over-permissive and to get improvements for handling security group rule limits. Starting from v4, the public Lambda function URL has been replaced with a private API Gateway endpoint accessed via VPC PrivateLink, and the HA code now automatically tries all security groups when adding temporary Lambda access rules (see FAQ #11). You can perform a direct stack update using the v4 launch template, which is faster than deleting and recreating the stack. However, if there are any changes to the controller configuration, deleting the current stack and recreating a new stack is recommended.
+   - **Option A: Stack Update (Recommended):** If you are currently running a 7.2+ AWS Controller AMI with the v3 CloudFormation stack, you can update to the v4 template to address the security issue with the public Lambda function URL being over-permissive and to get improvements for handling security group rule limits. Starting from v4, the public Lambda function URL has been replaced with a private API Gateway endpoint accessed via VPC PrivateLink, and the HA code now automatically tries all security groups when adding temporary Lambda access rules (see FAQ #11). You can perform a direct stack update using the v4 launch template, which is faster than deleting and recreating the stack.
+   - **Option B: Delete and Recreate (Clean State):** Delete the existing v3 CloudFormation stack and create a new stack using the v4 template, this ensures all components are created fresh with the v4 architecture.
 
 11. What should I do if HA restore fails with "RulesPerSecurityGroupLimitExceeded" error?
    - AWS has a limit of 60 ingress rules per security group. When Security Group Management is enabled, gateway rules are automatically added to the primary security group (the first Aviatrix-created security group, typically named `Aviatrix-SG-{ip}`) first. During HA failover, the HA code needs to add a temporary Lambda access rule to allow configuration restore.
