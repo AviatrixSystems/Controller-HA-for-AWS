@@ -1,7 +1,7 @@
-from enum import Enum, auto
 import logging
 import os
 import time
+from enum import Enum, auto
 from typing import Any
 
 from types_boto3_ec2.client import EC2Client
@@ -12,8 +12,8 @@ from aviatrix_ha.api import client
 from aviatrix_ha.api.external.ip import get_public_ip
 from aviatrix_ha.common.constants import (
     HANDLE_HA_TIMEOUT,
-    WAIT_DELAY,
     TEMP_ACCOUNT_NAME,
+    WAIT_DELAY,
 )
 from aviatrix_ha.csp.eip import assign_eip
 from aviatrix_ha.csp.instance import enable_t2_unlimited
@@ -25,11 +25,10 @@ from aviatrix_ha.csp.s3 import (
 from aviatrix_ha.csp.sg import (
     disable_open_sg_rules,
     enable_open_sg_rules,
-    restore_security_group_access,
+    remove_temp_security_group_access,
     temp_add_security_group_access,
 )
 from aviatrix_ha.errors.exceptions import AvxError
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -167,7 +166,7 @@ class HAEventHandler:
                 self.client.login("admin", self.private_ip)
                 break
             except Exception as err:
-                logging.exception(
+                logger.exception(
                     "Login failed due to %s: trying again in %s", err, WAIT_DELAY
                 )
                 time.sleep(WAIT_DELAY)
@@ -179,11 +178,30 @@ class HAEventHandler:
         return HAStepResult.CONTINUE
 
     def create_temp_account_step(self) -> HAStepResult:
+        """Create a temporary account needed for backup restore.
+
+        Retries until deadline since initial_setup may still be completing.
+        """
         logger.info("Creating temporary account for config restore")
-        response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
-        if response_json.get("return", False) is not True:
-            raise AvxError("Could not create temp account")
-        return HAStepResult.CONTINUE
+        while not self.deadline_exceeded():
+            try:
+                response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
+                if response_json.get("return"):
+                    logger.info("Successfully created temp account for restore")
+                    return HAStepResult.CONTINUE
+                logger.warning(
+                    "Create temp account returned failure: %s, retrying in %s",
+                    response_json,
+                    WAIT_DELAY,
+                )
+            except Exception as err:
+                logger.warning(
+                    "Failed to create temp account due to %s: retrying in %s",
+                    err,
+                    WAIT_DELAY,
+                )
+            time.sleep(WAIT_DELAY)
+        raise AvxError("Deadline exceeded while creating temp account")
 
     def restore_backup_step(self) -> HAStepResult:
         priv_ip = os.environ.get(
@@ -215,7 +233,7 @@ class HAEventHandler:
     def remove_temp_sg_rule_step(self) -> HAStepResult:
         if not os.environ.get("TMP_SG_GRP") or not os.environ.get("TMP_SG_RULE"):
             return HAStepResult.CONTINUE
-        restore_security_group_access(
+        remove_temp_security_group_access(
             self.ec2_client, os.environ["TMP_SG_GRP"], os.environ["TMP_SG_RULE"]
         )
         update_env_dict(
@@ -239,6 +257,7 @@ class HAEventHandler:
         ]
         cleanup_steps = [
             self.remove_temp_sg_rule_step,
+            self.enable_open_sg_rules_step,
         ]
         try:
             for step in steps:

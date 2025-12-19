@@ -7,7 +7,6 @@ from types_boto3_ec2.type_defs import InstanceTypeDef
 
 from aviatrix_ha.errors.exceptions import AvxError
 
-
 BLOCKED_RULE_TAG = "avx:ha-blocked-rule"
 
 
@@ -120,8 +119,10 @@ def enable_open_sg_rules(client: EC2Client, instance_id: str) -> list[dict[str, 
     return modified_rules
 
 
-def restore_security_group_access(client: EC2Client, sg_id: str, sgr_id: str) -> None:
-    """Remove SG rule in previously added security group"""
+def remove_temp_security_group_access(
+    client: EC2Client, sg_id: str, sgr_id: str
+) -> None:
+    """Remove SG rule with ${lambda_ip}/32 in previously added security group"""
     try:
         client.revoke_security_group_ingress(
             GroupId=sg_id,
@@ -140,7 +141,11 @@ def temp_add_security_group_access(
     lambda_ip: str,
     api_private_access: str | None,
 ) -> tuple[bool, str, str]:
-    """Temporarily add ${lambda_ip}/32 rule in one security group"""
+    """
+    Temporarily add ${lambda_ip}/32 rule in one security group
+    If the current security group reach rule limitation,
+    try with the next security group to add that rule
+    """
     sgs = [sg_["GroupId"] for sg_ in controller_instanceobj["SecurityGroups"]]
     if not sgs:
         raise AvxError("No security groups were attached to controller")
@@ -148,29 +153,41 @@ def temp_add_security_group_access(
     if api_private_access == "True":
         return True, sgs[0], ""
 
-    try:
-        rsp = client.authorize_security_group_ingress(
-            GroupId=sgs[0],
-            IpPermissions=[
-                {
-                    "IpProtocol": "tcp",
-                    "FromPort": 443,
-                    "ToPort": 443,
-                    "IpRanges": [
-                        {
-                            "CidrIp": f"{lambda_ip}/32",
-                            "Description": "Lambda access for Aviatrix HA",
-                        }
-                    ],
-                }
-            ],
-        )
-    except botocore.exceptions.ClientError as err:
-        if "InvalidPermission.Duplicate" in str(err):
-            return True, sgs[0], ""
-        print(str(err))
-        raise
-    return False, sgs[0], rsp["SecurityGroupRules"][0]["SecurityGroupRuleId"]
+    for sg in sgs:
+        try:
+            rsp = client.authorize_security_group_ingress(
+                GroupId=sg,
+                IpPermissions=[
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 443,
+                        "ToPort": 443,
+                        "IpRanges": [
+                            {
+                                "CidrIp": f"{lambda_ip}/32",
+                                "Description": "Lambda access for Aviatrix HA",
+                            }
+                        ],
+                    }
+                ],
+            )
+            return False, sg, rsp["SecurityGroupRules"][0]["SecurityGroupRuleId"]
+        except botocore.exceptions.ClientError as err:
+            if "InvalidPermission.Duplicate" in str(err):
+                print(f"Rule already exists in security group {sg}")
+                return True, sg, ""
+            if "RulesPerSecurityGroupLimitExceeded" in str(err):
+                # rule limit exceeds, try next SG until we find a slot.
+                print(
+                    f"The maximum number of rules per security group has been reached for sg {sg}, trying the next sg..."
+                )
+                continue
+            print(str(err))
+            raise
+
+    raise AvxError(
+        "All SGs are full, please create a new SG to add rule for lambda access during HA event"
+    )
 
 
 def create_new_sg(client: EC2Client) -> str:
