@@ -166,7 +166,7 @@ class HAEventHandler:
                 self.client.login("admin", self.private_ip)
                 break
             except Exception as err:
-                logging.exception(
+                logger.exception(
                     "Login failed due to %s: trying again in %s", err, WAIT_DELAY
                 )
                 time.sleep(WAIT_DELAY)
@@ -178,11 +178,30 @@ class HAEventHandler:
         return HAStepResult.CONTINUE
 
     def create_temp_account_step(self) -> HAStepResult:
+        """Create a temporary account needed for backup restore.
+
+        Retries until deadline since initial_setup may still be completing.
+        """
         logger.info("Creating temporary account for config restore")
-        response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
-        if response_json.get("return", False) is not True:
-            raise AvxError("Could not create temp account")
-        return HAStepResult.CONTINUE
+        while not self.deadline_exceeded():
+            try:
+                response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
+                if response_json.get("return"):
+                    logger.info("Successfully created temp account for restore")
+                    return HAStepResult.CONTINUE
+                logger.warning(
+                    "Create temp account returned failure: %s, retrying in %s",
+                    response_json,
+                    WAIT_DELAY,
+                )
+            except Exception as err:
+                logger.warning(
+                    "Failed to create temp account due to %s: retrying in %s",
+                    err,
+                    WAIT_DELAY,
+                )
+            time.sleep(WAIT_DELAY)
+        raise AvxError("Deadline exceeded while creating temp account")
 
     def restore_backup_step(self) -> HAStepResult:
         priv_ip = os.environ.get(
@@ -238,6 +257,7 @@ class HAEventHandler:
         ]
         cleanup_steps = [
             self.remove_temp_sg_rule_step,
+            self.enable_open_sg_rules_step,
         ]
         try:
             for step in steps:
