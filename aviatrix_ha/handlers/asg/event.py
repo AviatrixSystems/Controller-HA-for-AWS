@@ -25,7 +25,7 @@ from aviatrix_ha.csp.s3 import (
 from aviatrix_ha.csp.sg import (
     disable_open_sg_rules,
     enable_open_sg_rules,
-    restore_security_group_access,
+    remove_temp_security_group_access,
     temp_add_security_group_access,
 )
 from aviatrix_ha.errors.exceptions import AvxError
@@ -233,7 +233,7 @@ class HAEventHandler:
     def remove_temp_sg_rule_step(self) -> HAStepResult:
         if not os.environ.get("TMP_SG_GRP") or not os.environ.get("TMP_SG_RULE"):
             return HAStepResult.CONTINUE
-        restore_security_group_access(
+        remove_temp_security_group_access(
             self.ec2_client, os.environ["TMP_SG_GRP"], os.environ["TMP_SG_RULE"]
         )
         update_env_dict(
