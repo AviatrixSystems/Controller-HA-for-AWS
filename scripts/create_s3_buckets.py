@@ -15,10 +15,11 @@ Usage:
     # Create buckets in all regions
     poetry run python3 scripts/create_s3_buckets.py
 """
+
 import argparse
 import boto3
 import botocore
-from botocore.exceptions import ClientError, NoCredentialError, WaiterError
+from botocore.exceptions import ClientError, WaiterError
 
 
 # NB: Avoid S3 Bucket Name Squatting - all buckets are pre-created manually.
@@ -100,10 +101,10 @@ def configure_bucket_with_public_access(
         s3_client.put_public_access_block(
             Bucket=bucket_name,
             PublicAccessBlockConfiguration={
-                "BlockPublicAcls": False,  # Allow public ACLs on specific object
+                "BlockPublicAcls": False,
                 "IgnorePublicAcls": False,
-                "BlockPublicPolicy": True,  # Don't make whole bucket public
-                "RestrictPublicBuckets": True,
+                "BlockPublicPolicy": False,
+                "RestrictPublicBuckets": False,
             },
         )
         print(f"Configured Block Public Access for {bucket_name}")
