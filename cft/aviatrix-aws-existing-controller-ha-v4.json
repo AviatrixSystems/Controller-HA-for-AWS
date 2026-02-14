@@ -291,6 +291,7 @@
         "SecurityGroupIds" : [{ "Ref" : "SecurityGroupParam" }],
         "ServiceName" : { "Fn::Sub" : "com.amazonaws.${AWS::Region}.execute-api" },
         "SubnetIds" : { "Ref" : "SubnetParam" },
+        "PrivateDnsEnabled" : true,
         "Tags" : [
           {
             "Key" : "Name",
