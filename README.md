@@ -19,6 +19,8 @@ Private API Endpoint (v4 Template)
 * The controller instances can call the Lambda function's `/controller_version` endpoint privately (without traversing the public internet)
 * Access is restricted to the VPC Endpoint only - no public internet access
 
+> **Note:** The v4 template creates its own `execute-api` VPC Endpoint. If your VPC already has a centralized `execute-api` VPC Endpoint with `PrivateDnsEnabled: true`, it will override DNS resolution and hijack traffic away from the template-created endpoint, causing a 403 AccessDeniedException. In this case, either remove/opt-out of the centralized VPC Endpoint for the controller's VPC (recommended), or use the v3 template with Lambda Function URL as a fallback.
+
 This script is only supported for Aviatrix Controller version >= 3.4
 ### Pre-requisites:
 
