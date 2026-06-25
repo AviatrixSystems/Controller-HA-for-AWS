@@ -96,6 +96,15 @@ def verify_backup_file(controller_instanceobj: InstanceTypeDef) -> tuple[bool, s
             if err.response["Error"]["Code"] == "404":
                 print("The object %s does not exist." % s3_file)
                 return False, ""
+            if err.response["Error"]["Code"] == "403":
+                # With s3:ListBucket, a missing object returns 404; a 403 here
+                # means the object exists but is unreadable, could due to object ownership,
+                # bucket policy, or KMS, not a missing backup.
+                print(
+                    "Access denied (403) reading %s. Check S3 object ownership,"
+                    " bucket policy, and KMS permissions for the Lambda role." % s3_file
+                )
+                return False, ""
             print(str(err))
             return False, ""
     except Exception as err:
