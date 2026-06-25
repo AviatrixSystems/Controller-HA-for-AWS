@@ -83,9 +83,15 @@ def _lambda_handler(event: dict[str, Any], context: Any) -> Any:
         remove_temp_security_group_access(client, tmp_sg, tmp_sgr)
     instance_name = os.environ.get("AVIATRIX_TAG", "")
     inst_id = os.environ.get("INST_ID", "")
-    print(f"Trying describe with name {instance_name} and ID {inst_id}")
+    # CTRL_PRIV_IP is the user-provided controller private IP, used to
+    # distinguish when multiple instances share the Name tag.
+    ctrl_priv_ip = os.environ.get("CTRL_PRIV_IP", "")
+    print(
+        f"Trying describe with name {instance_name}, ID {inst_id}, and "
+        f"private IP {ctrl_priv_ip}"
+    )
     describe_err, controller_instanceobj = get_controller_instance(
-        client, instance_name, inst_id
+        client, instance_name, inst_id, ctrl_priv_ip
     )
 
     if event_type == EventType.CFT:
