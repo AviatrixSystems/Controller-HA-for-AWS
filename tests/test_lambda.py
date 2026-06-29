@@ -82,7 +82,9 @@ def _sns_message(event_type):
     }
 
 
-def mock_send_response(event, context, status, reason, **kwargs):
+def mock_send_response(
+    event, context, status, reason="", response_data=None, physical_resource_id=None
+):
     if status != "SUCCESS":
         pytest.fail(f"{status}: {reason}")
 
