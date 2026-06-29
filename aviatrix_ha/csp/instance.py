@@ -15,27 +15,20 @@ def get_controller_instance(
 ) -> tuple[str | None, InstanceTypeDef]:
     """Return the controller instance to manage, or an error if it is unclear.
 
-    The Name tag is not unique: an account can have several running instances
-    with the same Name tag (in different VPCs, subnets, or security groups).
-    Selecting the first match can pick the wrong controller, and HA then reads
-    that controller's backup by its private IP, restoring the wrong backup.
+    inst_id, when set, is an authoritative identifier and is used directly. On
+    failover the ASG tells us (via the SNS event) the exact instance it just
+    launched; that is passed here so we restore onto the new controller rather
+    than guessing from the Name tag. We must NOT fall back to a previously
+    recorded instance id, because at failover that points at the old, now
+    terminated controller - selecting it makes the restore step think the
+    controller is "already saved" and skip restoring.
 
-    The private IP (provided by the user at stack creation) is unique within a
-    VPC, so it is used to choose between instances that share the Name tag. It
-    is only used to choose between multiple matches; it never discards a single
-    match. During failover the replacement instance has a new private IP that
-    will not equal the provided one, but it is then the only instance with the
-    Name tag and is selected.
-
-    Steps:
-      1. List running instances with the given Name tag.
-      2. If more than one is found, keep only the one whose private IP matches
-         priv_ip (if priv_ip is set and matches one of them).
-      3. If exactly one instance remains, return it.
-      4. Otherwise, if inst_id is set, return that instance. This also finds a
-         controller that step 1 misses, for example one that is stopped or
-         whose Name tag was changed.
-      5. If no single instance can be determined, return a descriptive error.
+    Without inst_id we find the controller by its Name tag. The Name tag is not
+    unique: an account can have several running instances with the same Name
+    tag. The user-supplied private IP (unique within a VPC) is used to choose
+    between such matches; it only narrows multiple matches and never discards a
+    single match. If the tag cannot be resolved to exactly one instance, a
+    descriptive error is returned instead of guessing.
     """
     try:
         reservations = ec2_client.describe_instances(
@@ -58,10 +51,7 @@ def get_controller_instance(
             return None, instances[0]
 
         if inst_id:
-            print(
-                f"Name tag '{instance_name}' resolved to {len(instances)} running "
-                f"instances; using recorded instance id {inst_id}"
-            )
+            print(f"Looking up controller by instance id {inst_id}")
             instance = ec2_client.describe_instances(InstanceIds=[inst_id])[
                 "Reservations"
             ][0]["Instances"][0]

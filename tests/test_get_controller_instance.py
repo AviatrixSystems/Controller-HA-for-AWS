@@ -92,21 +92,27 @@ def test_private_ip_matching_none_returns_error(ec2_client):
     assert found == {}
 
 
-def test_instance_id_is_used_when_name_tag_not_found(ec2_client):
-    """A controller the Name tag lookup misses is found through inst_id."""
-    # Instance tagged with a different name -> lookup for NAME_TAG finds nothing.
-    instance = run_controller_instance(ec2_client, "renamed-controller")
-
-    err, found = get_controller_instance(
-        ec2_client, NAME_TAG, inst_id=instance["InstanceId"]
-    )
-    assert err is None
-    assert found["InstanceId"] == instance["InstanceId"]
-
-
 def test_no_match_and_no_instance_id_returns_error(ec2_client):
     """Nothing found -> error message set, empty instance object."""
     err, found = get_controller_instance(ec2_client, NAME_TAG)
     assert err is not None
     assert NAME_TAG in err
     assert found == {}
+
+
+def test_instance_id_is_authoritative_over_name_tag(ec2_client):
+    """When inst_id is given it is used directly, even with a duplicate tag.
+
+    Reproduces the failover case: a second instance shares the Name tag. The ASG
+    reports the exact id of the instance it just launched, and that instance
+    must be selected directly - not resolved through the ambiguous Name tag - so
+    restore runs against the new controller instead of being skipped.
+    """
+    run_controller_instance(ec2_client, NAME_TAG)
+    launched = run_controller_instance(ec2_client, NAME_TAG)
+
+    err, found = get_controller_instance(
+        ec2_client, NAME_TAG, inst_id=launched["InstanceId"]
+    )
+    assert err is None
+    assert found["InstanceId"] == launched["InstanceId"]

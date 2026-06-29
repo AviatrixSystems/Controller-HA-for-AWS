@@ -3,6 +3,7 @@
 # pylint: disable=too-many-lines,too-many-locals,too-many-branches,too-many-return-statements
 # pylint: disable=too-many-statements,too-many-arguments,broad-except
 import enum
+import json
 import os
 import traceback
 from typing import Any
@@ -61,6 +62,22 @@ def _get_event_type(event: dict[str, Any]) -> EventType:
     return EventType.UNKNOWN
 
 
+def _get_launched_instance_id(event: dict[str, Any]) -> str:
+    """Return the instance id from an ASG EC2_INSTANCE_LAUNCH SNS event.
+
+    On failover the ASG launches a new controller and tells us its exact
+    instance id. That id is authoritative for picking the controller to
+    restore. Returns "" for any other event.
+    """
+    try:
+        sns_msg = json.loads(event["Records"][0]["Sns"]["Message"])
+        if sns_msg.get("Event") == "autoscaling:EC2_INSTANCE_LAUNCH":
+            return sns_msg.get("EC2InstanceId", "")
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        pass
+    return ""
+
+
 def _lambda_handler(event: dict[str, Any], context: Any) -> Any:
     """Entry point of the lambda script without exception handling
     This lambda function will serve muliple kinds of requests:
@@ -70,28 +87,39 @@ def _lambda_handler(event: dict[str, Any], context: Any) -> Any:
     3) function_request - request to the function url
     """
     event_type = _get_event_type(event)
+
+    # A function URL request (controller asking for its version) does not need
+    # the controller instance, so handle it before any EC2 discovery. This also
+    # avoids confusing cloudwatch log "can't determine which instance" error when the
+    # Name tag is ambiguous, since that lookup is irrelevant here.
+    if event_type == EventType.FUNCTION:
+        return handle_function_event(event, context)
+
     client = boto3.client("ec2")
     lambda_client = boto3.client("lambda")
 
     tmp_sg = os.environ.get("TMP_SG_GRP", "")
     tmp_sgr = os.environ.get("TMP_SG_RULE", "")
-    if event_type != EventType.FUNCTION and tmp_sg and tmp_sgr:
+    if tmp_sg and tmp_sgr:
         print(
             f"Lambda probably did not complete last time. Reverting {tmp_sg}/{tmp_sgr}"
         )
         update_env_dict(lambda_client, context, {"TMP_SG_GRP": "", "TMP_SG_RULE": ""})
         remove_temp_security_group_access(client, tmp_sg, tmp_sgr)
     instance_name = os.environ.get("AVIATRIX_TAG", "")
-    inst_id = os.environ.get("INST_ID", "")
     # CTRL_PRIV_IP is the user-provided controller private IP, used to
     # distinguish when multiple instances share the Name tag.
     ctrl_priv_ip = os.environ.get("CTRL_PRIV_IP", "")
+    # On a failover launch the SNS event tells us exactly which instance the ASG
+    # created. That id is authoritative, so we look the controller up directly
+    # by it instead of by the (possibly ambiguous) Name tag.
+    launched_inst_id = _get_launched_instance_id(event)
     print(
-        f"Trying describe with name {instance_name}, ID {inst_id}, and "
-        f"private IP {ctrl_priv_ip}"
+        f"Trying describe with name {instance_name}, "
+        f"private IP {ctrl_priv_ip}, launched instance {launched_inst_id}"
     )
     describe_err, controller_instanceobj = get_controller_instance(
-        client, instance_name, inst_id, ctrl_priv_ip
+        client, instance_name, launched_inst_id, ctrl_priv_ip
     )
 
     if event_type == EventType.CFT:
@@ -108,8 +136,6 @@ def _lambda_handler(event: dict[str, Any], context: Any) -> Any:
         return handle_sns_event(
             describe_err, event, client, lambda_client, controller_instanceobj, context
         )
-    elif event_type == EventType.FUNCTION:
-        return handle_function_event(event, context)
     else:
         print("Unknown source. Not from CFT or SNS")
         return False
