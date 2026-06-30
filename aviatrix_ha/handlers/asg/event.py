@@ -228,6 +228,9 @@ class HAEventHandler:
             self.context,
             self.public_ip,
         )
+        update_env_dict(
+            self.lambda_client, self.context, {"CTRL_PRIV_IP": self.private_ip}
+        )
         return HAStepResult.CONTINUE
 
     def remove_temp_sg_rule_step(self) -> HAStepResult:

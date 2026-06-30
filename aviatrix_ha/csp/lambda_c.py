@@ -134,6 +134,9 @@ def set_environ(
         # contain the previous private IP.
         "OLD_PRIV_IP": os.environ.get("PRIV_IP") or priv_ip,
         "INST_ID": inst_id,
+        # Preserve the user-supplied controller private IP.
+        # Failover refreshes it explicitly.
+        "CTRL_PRIV_IP": os.environ.get("CTRL_PRIV_IP", ""),
         "SUBNETLIST": os.environ.get("SUBNETLIST", ""),
         "S3_BUCKET_BACK": os.environ.get("S3_BUCKET_BACK", ""),
         "S3_BUCKET_REGION": os.environ.get("S3_BUCKET_REGION", ""),
@@ -181,6 +184,7 @@ def update_env_dict(
         "PRIV_IP": os.environ.get("PRIV_IP", ""),
         "OLD_PRIV_IP": os.environ.get("OLD_PRIV_IP", ""),
         "INST_ID": os.environ.get("INST_ID", ""),
+        "CTRL_PRIV_IP": os.environ.get("CTRL_PRIV_IP", ""),
         "SUBNETLIST": os.environ.get("SUBNETLIST", ""),
         "S3_BUCKET_BACK": os.environ.get("S3_BUCKET_BACK", ""),
         "S3_BUCKET_REGION": os.environ.get("S3_BUCKET_REGION", ""),

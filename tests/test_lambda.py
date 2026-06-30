@@ -69,20 +69,25 @@ def _cft_message(request_type, lambda_arn):
     }
 
 
-def _sns_message(event_type):
+def _sns_message(event_type, instance_id=""):
+    message = {"Event": event_type}
+    if instance_id:
+        message["EC2InstanceId"] = instance_id
     return {
         "Records": [
             {
                 "EventSource": "aws:sns",
                 "Sns": {
-                    "Message": f'{{"Event": "{event_type}"}}',
+                    "Message": json.dumps(message),
                 },
             }
         ]
     }
 
 
-def mock_send_response(event, context, status, reason, **kwargs):
+def mock_send_response(
+    event, context, status, reason="", response_data=None, physical_resource_id=None
+):
     if status != "SUCCESS":
         pytest.fail(f"{status}: {reason}")
 
@@ -533,11 +538,21 @@ def test_lambda_e2e_with_open_sg(e2e_test_env, with_error):
     ids=["http_api", "rest_api"],
 )
 @moto.mock_aws
-def test_lambda_function(event_data):
-    """Test the lambda function returns the controller version fetched from S3"""
+def test_lambda_function(event_data, monkeypatch):
+    """Test the lambda function returns the controller version fetched from S3.
+
+    A function URL request must not perform controller instance discovery: it
+    does not need the instance, and doing so would log a spurious error when the
+    Name tag is ambiguous. Assert get_controller_instance is never called.
+    """
     os.environ["S3_BUCKET_REGION"] = "us-west-2"
     s3 = boto3.client("s3")
     os.environ["PRIV_IP"] = priv_ip = "10.20.30.40"
+
+    def fail_if_called(*args, **kwargs):
+        pytest.fail("get_controller_instance should not run for a function event")
+
+    monkeypatch.setattr(aviatrix_ha, "get_controller_instance", fail_if_called)
 
     s3.create_bucket(Bucket=os.environ["S3_BUCKET_BACK"])
     s3.put_object(

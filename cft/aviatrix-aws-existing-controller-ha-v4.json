@@ -13,7 +13,7 @@
         },
         {
           "Label" : { "default":"Aviatrix Controller Backup Configuration" },
-          "Parameters" : [ "AviatrixTagParam", "CustomAviatrixAppRoleName", "CustomAviatrixEC2RoleName", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "NotifEmailParam" ]
+          "Parameters" : [ "AviatrixTagParam", "ControllerPrivateIpParam", "CustomAviatrixAppRoleName", "CustomAviatrixEC2RoleName", "S3BucketBackupParam", "AwsAccessKeyParam", "AwsSecretKeyParam", "NotifEmailParam" ]
         }
       ],
       "ParameterLabels" :
@@ -22,6 +22,7 @@
          "SubnetParam" : { "default" : "Enter one or more subnets in different Availability zones within that VPC." },
          "SecurityGroupParam": { "default" : "Enter the security group of existing controller instance." },
          "AviatrixTagParam": { "default" : "Enter Name tag of the existing Aviatrix Controller instance." },
+         "ControllerPrivateIpParam": { "default" : "Enter the private IP address of the existing Aviatrix Controller instance." },
          "S3BucketBackupParam": { "default" : "Enter S3 Bucket which will be used to store backup files." },
          "NotifEmailParam": { "default" : "Enter an email to receive notifications for autoscaling group events" },
          "PrivateAccess": { "default" : "Enter True to enable Private IP Access from lambda to the Controller. Please note that you have to attach the Lambda to the VPC subnet and ensure lambda has internet access via EIP/NAT" },
@@ -46,6 +47,13 @@
     {
       "Type": "String",
       "Description": "Enter the existing controller instance name. It should contain only letters, numbers, hyphens, or underscores. No spaces allowed"
+    },
+    "ControllerPrivateIpParam":
+    {
+      "Type": "String",
+      "Description": "Enter the private IP address of the existing Aviatrix Controller instance. This uniquely identifies the controller when multiple instances share the same Name tag.",
+      "AllowedPattern": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$",
+      "ConstraintDescription": "Must be a valid IPv4 format (e.g. 10.0.0.52)."
     },
     "SecurityGroupParam":
     {
@@ -184,6 +192,7 @@
                         "iam:CreateServiceLinkedRole",
                         "s3:GetBucketLocation",
                         "s3:GetObject",
+                        "s3:ListBucket",
                         "elasticloadbalancing:DescribeTargetGroups",
                         "elasticloadbalancing:DescribeTargetHealth"
                     ],
@@ -202,6 +211,7 @@
           "Environment" : {
             "Variables": {
               "AVIATRIX_TAG" : { "Ref" : "AviatrixTagParam" },
+              "CTRL_PRIV_IP" : { "Ref" : "ControllerPrivateIpParam" },
               "AWS_ROLE_APP_NAME" : { "Ref" : "CustomAviatrixAppRoleName" },
               "AWS_ROLE_EC2_NAME" : { "Ref" : "CustomAviatrixEC2RoleName" },
               "SUBNETLIST" : {"Fn::Join": [",", { "Ref": "SubnetParam" }]},
