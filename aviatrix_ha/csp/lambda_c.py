@@ -9,6 +9,14 @@ from types_boto3_lambda.client import LambdaClient
 
 from aviatrix_ha.errors.exceptions import AvxError
 
+LAUNCH_TEMPLATE_METADATA_OPTION_KEYS = (
+    "HttpTokens",
+    "HttpPutResponseHopLimit",
+    "HttpEndpoint",
+    "HttpProtocolIpv6",
+    "InstanceMetadataTags",
+)
+
 
 def wait_function_update_successful(
     lambda_client: LambdaClient, function_name: str, raise_err: bool = False
@@ -100,13 +108,7 @@ def set_environ(
     metadata_options_resp = controller_instanceobj.get("MetadataOptions", {})
     metadata_options = {
         key: metadata_options_resp[key]
-        for key in (
-            "HttpTokens",
-            "HttpPutResponseHopLimit",
-            "HttpEndpoint",
-            "HttpProtocolIpv6",
-            "InstanceMetadataTags",
-        )
+        for key in LAUNCH_TEMPLATE_METADATA_OPTION_KEYS
         if key in metadata_options_resp
     }
 
