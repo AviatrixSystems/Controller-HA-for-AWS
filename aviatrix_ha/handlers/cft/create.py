@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, cast
 import uuid
 
 from aviatrix_ha.handlers.cft.delete import delete_launch_template
@@ -12,6 +12,7 @@ import botocore
 from types_boto3_ec2.literals import InstanceTypeType
 from types_boto3_ec2.type_defs import (
     LaunchTemplateBlockDeviceMappingRequestTypeDef,
+    LaunchTemplateInstanceMetadataOptionsRequestTypeDef,
     RequestLaunchTemplateDataTypeDef,
 )
 import yaml
@@ -120,7 +121,7 @@ def _create_launch_template(
     ec2_client,
     lt_name: str,
     ami_id: str,
-    inst_type: str,
+    inst_type: InstanceTypeType,
     key_name: str,
     sg_list: list[str],
     user_data: str,
@@ -131,6 +132,7 @@ def _create_launch_template(
     disable_api_term: bool,
     unique_tags: dict,
     cf_tags: list,
+    metadata_options: LaunchTemplateInstanceMetadataOptionsRequestTypeDef,
 ) -> None:
     cloud_init = _update_user_data(user_data).encode("utf-8")
 
@@ -148,6 +150,7 @@ def _create_launch_template(
         ],
         "SecurityGroupIds": sg_list,
         "UserData": base64.b64encode(cloud_init).decode("utf-8"),
+        "MetadataOptions": metadata_options,
         # # Unused and unsupported parameters
         # Placement, (az info) # RamDiskId # 'NetworkInterfaces' # 'KernelId':  '',
         # 'SecurityGroups': sg_list  # for non-default VPC only SG is supported by AWS
@@ -156,7 +159,7 @@ def _create_launch_template(
         # 'UserData': "'IyBJZ25vcmU='",# base64.b64encode("# Ignore".encode()).decode()
         # SecurityGroups(specified in asg) # InstanceMarketOptions(spot)
         # CreditSpecification # CpuOptions # CapacityReservationSpecification
-        # LicenseSpecifications # HibernationOptions # MetadataOptions # EnclaveOptions
+        # LicenseSpecifications # HibernationOptions # EnclaveOptions
         # InstanceRequirements # PrivateDnsNameOptions # MaintenanceOptions
     }
 
@@ -315,6 +318,15 @@ def setup_ha(
     iam_arn = os.environ.get("IAM_ARN", "")
     monitoring = os.environ.get("MONITORING", "disabled") == "enabled"
     ebz_optimized = os.environ.get("EBS_OPT", "False") == "True"
+    # Mirror the source controller's IMDS configuration so the replacement
+    # inherits IMDSv2 enforcement (e.g. HttpTokens: required). Without this
+    # the instance defaults to the account/region setting and RunInstances is
+    # denied in environments with an SCP mandating IMDSv2. Empty when the
+    # source had no explicit config, which leaves the account/region default.
+    metadata_options = cast(
+        LaunchTemplateInstanceMetadataOptionsRequestTypeDef,
+        json.loads(os.environ.get("METADATA_OPTIONS", "{}")),
+    )
     if inst_id:
         print("Setting launch template from instance")
 
@@ -384,6 +396,7 @@ def setup_ha(
         disable_api_term,
         unique_tags,
         cf_tags,
+        metadata_options,
     )
 
     # Step 3: Create or Update ASG

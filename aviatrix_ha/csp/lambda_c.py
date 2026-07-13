@@ -96,6 +96,20 @@ def set_environ(
         if not key.startswith("aws:"):
             tags_stripped.append(tag)
 
+    # Mirror the original controller's IMDS configuration onto the launch template.
+    metadata_options_resp = controller_instanceobj.get("MetadataOptions", {})
+    metadata_options = {
+        key: metadata_options_resp[key]
+        for key in (
+            "HttpTokens",
+            "HttpPutResponseHopLimit",
+            "HttpEndpoint",
+            "HttpProtocolIpv6",
+            "InstanceMetadataTags",
+        )
+        if key in metadata_options_resp
+    }
+
     disks = []
     for volume in controller_instanceobj.get("BlockDeviceMappings", []):
         ebs = volume.get("Ebs", {})
@@ -145,6 +159,7 @@ def set_environ(
         "IAM_ARN": iam_arn,
         "MONITORING": monitoring,
         "DISKS": json.dumps(disks),
+        "METADATA_OPTIONS": json.dumps(metadata_options),
         "TAGS": json.dumps(tags_stripped),
         "TMP_SG_GRP": os.environ.get("TMP_SG_GRP", ""),
         "TMP_SG_RULE": os.environ.get("TMP_SG_RULE", ""),
@@ -193,6 +208,7 @@ def update_env_dict(
         "IAM_ARN": os.environ.get("IAM_ARN", ""),
         "MONITORING": os.environ.get("MONITORING", ""),
         "DISKS": os.environ.get("DISKS", ""),
+        "METADATA_OPTIONS": os.environ.get("METADATA_OPTIONS", "{}"),
         "TAGS": os.environ.get("TAGS", "[]"),
         "TMP_SG_GRP": os.environ.get("TMP_SG_GRP", ""),
         "TMP_SG_RULE": os.environ.get("TMP_SG_RULE", ""),
