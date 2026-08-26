@@ -145,8 +145,11 @@ def _create_launch_template(
         "KeyName": key_name,
         "Monitoring": {"Enabled": monitoring},
         "DisableApiTermination": disable_api_term,
+        # requires a tag on all resources, not just ec2 instance.
         "TagSpecifications": [
-            {"ResourceType": "instance", "Tags": list(unique_tags.values())}
+            {"ResourceType": "instance", "Tags": list(unique_tags.values())},
+            {"ResourceType": "volume", "Tags": list(unique_tags.values())},
+            {"ResourceType": "network-interface", "Tags": list(unique_tags.values())},
         ],
         "SecurityGroupIds": sg_list,
         "UserData": base64.b64encode(cloud_init).decode("utf-8"),
