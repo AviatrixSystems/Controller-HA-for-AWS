@@ -29,7 +29,11 @@ def _get_lt_data(ec2_client, lt_name):
     return version["LaunchTemplateData"]
 
 
-def _create(ec2_client, lt_name, metadata_options):
+def _create(ec2_client, lt_name, metadata_options=None):
+    tags = {
+        ("Name", "ctrl"): {"Key": "Name", "Value": "ctrl"},
+        ("ApplicationCI", "cwj"): {"Key": "ApplicationCI", "Value": "cwj"},
+    }
     _create_launch_template(
         ec2_client,
         lt_name=lt_name,
@@ -43,9 +47,9 @@ def _create(ec2_client, lt_name, metadata_options):
         monitoring=False,
         ebz_optimized=False,
         disable_api_term=False,
-        unique_tags={("Name", "ctrl"): {"Key": "Name", "Value": "ctrl"}},
+        unique_tags=tags,
         cf_tags=[],
-        metadata_options=metadata_options,
+        metadata_options=metadata_options or {},
     )
 
 
@@ -61,7 +65,28 @@ def test_launch_template_mirrors_metadata_options(ec2_client):
 
 def test_launch_template_no_metadata_options_when_empty(ec2_client):
     """With no source config we fall back to the account/region default."""
-    _create(ec2_client, "lt-default", {})
+    _create(ec2_client, "lt-default")
 
     lt_data = _get_lt_data(ec2_client, "lt-default")
     assert "MetadataOptions" not in lt_data
+
+
+def test_launch_template_tags_all_resource_types(ec2_client):
+    """Tags must propagate to volumes and network interfaces, not just the instance.
+
+    Customers with IAM permission boundaries requiring tags on all resources
+    (e.g. ApplicationCI:cwj) will have RunInstances denied if volume or ENI
+    resource types are missing from TagSpecifications.
+    """
+    _create(ec2_client, "lt-tags")
+
+    lt_data = _get_lt_data(ec2_client, "lt-tags")
+    tag_specs = lt_data["TagSpecifications"]
+    resource_types = {spec["ResourceType"] for spec in tag_specs}
+    assert "instance" in resource_types
+    assert "volume" in resource_types
+    assert "network-interface" in resource_types
+
+    for spec in tag_specs:
+        spec_tags = {t["Key"]: t["Value"] for t in spec["Tags"]}
+        assert spec_tags["ApplicationCI"] == "cwj"
