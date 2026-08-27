@@ -32,7 +32,7 @@ def _get_lt_data(ec2_client, lt_name):
 def _create(ec2_client, lt_name, metadata_options=None):
     tags = {
         ("Name", "ctrl"): {"Key": "Name", "Value": "ctrl"},
-        ("ApplicationCI", "cwj"): {"Key": "ApplicationCI", "Value": "cwj"},
+        ("someCI", "test"): {"Key": "someCI", "Value": "test"},
     }
     _create_launch_template(
         ec2_client,
@@ -75,7 +75,7 @@ def test_launch_template_tags_all_resource_types(ec2_client):
     """Tags must propagate to volumes and network interfaces, not just the instance.
 
     Customers with IAM permission boundaries requiring tags on all resources
-    (e.g. ApplicationCI:cwj) will have RunInstances denied if volume or ENI
+    (e.g. someCI:test) will have RunInstances denied if volume or ENI
     resource types are missing from TagSpecifications.
     """
     _create(ec2_client, "lt-tags")
@@ -89,4 +89,4 @@ def test_launch_template_tags_all_resource_types(ec2_client):
 
     for spec in tag_specs:
         spec_tags = {t["Key"]: t["Value"] for t in spec["Tags"]}
-        assert spec_tags["ApplicationCI"] == "cwj"
+        assert spec_tags["someCI"] == "test"
