@@ -86,6 +86,10 @@ def _lambda_handler(event: dict[str, Any], context: Any) -> Any:
        created after controller failover.
     3) function_request - request to the function url
     """
+    retry_count = event.get("ha_retry_count", 0)
+    if retry_count > 0:
+        print(f"HA retry invocation {retry_count}")
+
     event_type = _get_event_type(event)
 
     # A function URL request (controller asking for its version) does not need

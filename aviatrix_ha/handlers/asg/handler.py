@@ -43,7 +43,15 @@ def handle_sns_event(
     print("SNS Event %s Description %s " % (sns_msg_event, sns_msg_desc))
     if sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH":
         print("Instance launched from Autoscaling")
-        handle_ha_event(client, lambda_client, controller_instanceobj, context)
+        retry_count = event.get("ha_retry_count", 0)
+        handle_ha_event(
+            client,
+            lambda_client,
+            controller_instanceobj,
+            context,
+            event=event,
+            retry_count=retry_count,
+        )
     elif sns_msg_event == "autoscaling:TEST_NOTIFICATION":
         print("Successfully received Test Event from ASG")
     elif sns_msg_event == "autoscaling:EC2_INSTANCE_LAUNCH_ERROR":
