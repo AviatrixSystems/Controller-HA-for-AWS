@@ -135,6 +135,7 @@ def _create_launch_template(
     metadata_options: LaunchTemplateInstanceMetadataOptionsRequestTypeDef,
 ) -> None:
     cloud_init = _update_user_data(user_data).encode("utf-8")
+    tag_vals = list(unique_tags.values())
 
     lt_data: RequestLaunchTemplateDataTypeDef = {
         "EbsOptimized": ebz_optimized,
@@ -145,8 +146,11 @@ def _create_launch_template(
         "KeyName": key_name,
         "Monitoring": {"Enabled": monitoring},
         "DisableApiTermination": disable_api_term,
+        # requires a tag on all resources, not just ec2 instance.
         "TagSpecifications": [
-            {"ResourceType": "instance", "Tags": list(unique_tags.values())}
+            {"ResourceType": "instance", "Tags": tag_vals},
+            {"ResourceType": "volume", "Tags": tag_vals},
+            {"ResourceType": "network-interface", "Tags": tag_vals},
         ],
         "SecurityGroupIds": sg_list,
         "UserData": base64.b64encode(cloud_init).decode("utf-8"),
