@@ -165,17 +165,18 @@ class HAEventHandler:
 
     def _reinvoke(self) -> None:
         """Invoke this Lambda again with the same event and an incremented retry count."""
+        next_retry = self.retry_count + 1
         payload = dict(self.event)
-        payload["ha_retry_count"] = self.retry_count + 1
+        payload["ha_retry_count"] = next_retry
         self.lambda_client.invoke(
             FunctionName=self.context.function_name,
             InvocationType="Event",
             Payload=json.dumps(payload),
         )
         logger.info(
-            "Re-invoked Lambda for retry (attempt %d of %d)",
-            self.retry_count + 2,
-            MAX_HA_RETRIES + 1,
+            "Re-invoked Lambda (retry %d of %d)",
+            next_retry,
+            MAX_HA_RETRIES,
         )
 
     def login_step(self) -> HAStepResult:
