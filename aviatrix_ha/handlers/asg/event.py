@@ -62,6 +62,7 @@ class HAEventHandler:
         self.controller_instance = controller_instance
         self.event = event
         self.retry_count = retry_count
+        self._reinvoked = False
 
         self.public_ip = self.api_ip = os.environ.get("EIP", "")
         self.private_ip = controller_instance["NetworkInterfaces"][0][
@@ -205,6 +206,7 @@ class HAEventHandler:
             self.remaining_ms() // 1000,
         )
         self._reinvoke()
+        self._reinvoked = True
         return HAStepResult.FINISH
 
     def initial_setup_step(self) -> HAStepResult:
@@ -307,13 +309,16 @@ class HAEventHandler:
         except Exception:
             raise
         finally:
-            for step in cleanup_steps:
-                try:
-                    step()
-                except Exception as err:
-                    logger.exception(
-                        "Error during cleanup step %s: %s", step.__name__, err
-                    )
+            if self._reinvoked:
+                logger.info("Skipping cleanup - next invocation will handle it")
+            else:
+                for step in cleanup_steps:
+                    try:
+                        step()
+                    except Exception as err:
+                        logger.exception(
+                            "Error during cleanup step %s: %s", step.__name__, err
+                        )
 
 
 def handle_ha_event(
