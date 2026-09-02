@@ -41,7 +41,8 @@ class HAStepResult(Enum):
     CONTINUE = auto()
     # FINISH means we should stop processing steps
     FINISH = auto()
-    # Note that fatal errors are indicated by raising AvxError exceptions
+    # REINVOKED means Lambda has re-invoked itself, also skipped cleanup
+    REINVOKED = auto()
 
 
 class HAEventHandler:
@@ -54,15 +55,13 @@ class HAEventHandler:
         context: Any,
         controller_instance: InstanceTypeDef,
         event: dict[str, Any],
-        retry_count: int = 0,
     ):
         self.ec2_client = ec2_client
         self.lambda_client = lambda_client
         self.context = context
         self.controller_instance = controller_instance
         self.event = event
-        self.retry_count = retry_count
-        self._reinvoked = False
+        self.retry_count = event.get("ha_retry_count", 0)
 
         self.public_ip = self.api_ip = os.environ.get("EIP", "")
         self.private_ip = controller_instance["NetworkInterfaces"][0][
@@ -172,7 +171,7 @@ class HAEventHandler:
         self.lambda_client.invoke(
             FunctionName=self.context.function_name,
             InvocationType="Event",
-            Payload=json.dumps(payload),
+            Payload=json.dumps(payload).encode("utf-8"),
         )
         logger.info(
             "Re-invoked Lambda (retry %d of %d)",
@@ -206,8 +205,7 @@ class HAEventHandler:
             self.remaining_ms() // 1000,
         )
         self._reinvoke()
-        self._reinvoked = True
-        return HAStepResult.FINISH
+        return HAStepResult.REINVOKED
 
     def initial_setup_step(self) -> HAStepResult:
         logger.info("Running initial setup")
@@ -299,17 +297,21 @@ class HAEventHandler:
             self.remove_temp_sg_rule_step,
             self.enable_open_sg_rules_step,
         ]
+        reinvoked = False
         try:
             for step in steps:
-                if self.remaining_ms() <= 0:
+                if self.remaining_ms() <= 60_000:
                     raise AvxError("Deadline exceeded while handling HA event")
                 result = step()
+                if result == HAStepResult.REINVOKED:
+                    reinvoked = True
+                    return
                 if result == HAStepResult.FINISH:
                     return
         except Exception:
             raise
         finally:
-            if self._reinvoked:
+            if reinvoked:
                 logger.info("Skipping cleanup - next invocation will handle it")
             else:
                 for step in cleanup_steps:
@@ -327,7 +329,6 @@ def handle_ha_event(
     controller_instanceobj: InstanceTypeDef,
     context: Any,
     event: dict[str, Any] | None = None,
-    retry_count: int = 0,
 ) -> None:
     """handle_ha_event() is called in response to the ASG creating a new controller instance.
 
@@ -342,6 +343,5 @@ def handle_ha_event(
         context,
         controller_instanceobj,
         event=event or {},
-        retry_count=retry_count,
     )
     handler.run()
