@@ -168,6 +168,7 @@
                         "lambda:GetFunction",
                         "lambda:GetFunctionConfiguration",
                         "lambda:AddPermission",
+                        "lambda:InvokeFunction",
                         "lambda:ListTags",
                         "autoscaling:CreateLaunchConfiguration",
                         "autoscaling:DeleteLaunchConfiguration",
