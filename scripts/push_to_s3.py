@@ -32,6 +32,10 @@ CFT_BUCKET_NAME = "aviatrix-cloudformation-templates"
 CFT_BUCKET_REGION = "us-west-2"
 CFT_FILE_NAME = "cft/aviatrix-aws-existing-controller-ha-v4.json"
 
+OUTAGE_REGIONS = {
+    "me-south-1",
+}
+
 
 def _validate_inputs(args: argparse.Namespace):
     if args.dev:
@@ -92,7 +96,11 @@ def push_lambda_file_s3(args: argparse.Namespace):
         "ec2",
         region_name="us-west-1",
     )
-    regions = [reg["RegionName"] for reg in ec2_.describe_regions()["Regions"]]
+    regions = [
+        reg["RegionName"]
+        for reg in ec2_.describe_regions()["Regions"]
+        if reg["RegionName"] not in OUTAGE_REGIONS
+    ]
 
     threads = [
         threading.Thread(target=push_lambda_file_in_region, args=[args, region])
