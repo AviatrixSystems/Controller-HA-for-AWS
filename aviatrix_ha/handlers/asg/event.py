@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import time
@@ -11,7 +12,8 @@ from types_boto3_lambda.client import LambdaClient
 from aviatrix_ha.api import client
 from aviatrix_ha.api.external.ip import get_public_ip
 from aviatrix_ha.common.constants import (
-    HANDLE_HA_TIMEOUT,
+    LOGIN_TIME_RESERVE,
+    MAX_HA_RETRIES,
     TEMP_ACCOUNT_NAME,
     WAIT_DELAY,
 )
@@ -39,7 +41,8 @@ class HAStepResult(Enum):
     CONTINUE = auto()
     # FINISH means we should stop processing steps
     FINISH = auto()
-    # Note that fatal errors are indicated by raising AvxError exceptions
+    # REINVOKED means Lambda has re-invoked itself, also skipped cleanup
+    REINVOKED = auto()
 
 
 class HAEventHandler:
@@ -51,12 +54,14 @@ class HAEventHandler:
         lambda_client: LambdaClient,
         context: Any,
         controller_instance: InstanceTypeDef,
+        event: dict[str, Any],
     ):
         self.ec2_client = ec2_client
         self.lambda_client = lambda_client
         self.context = context
         self.controller_instance = controller_instance
-        self.start_time = time.time()
+        self.event = event
+        self.retry_count = event.get("ha_retry_count", 0)
 
         self.public_ip = self.api_ip = os.environ.get("EIP", "")
         self.private_ip = controller_instance["NetworkInterfaces"][0][
@@ -69,8 +74,8 @@ class HAEventHandler:
             raise AvxError("Could not determine controller API endpoint IP")
         self.client = client.ApiClient(self.api_ip)
 
-    def deadline_exceeded(self) -> bool:
-        return time.time() - self.start_time >= HANDLE_HA_TIMEOUT
+    def remaining_ms(self) -> int:
+        return self.context.get_remaining_time_in_millis()
 
     def disable_api_termination_step(self) -> HAStepResult:
         old_inst_id = os.environ.get("INST_ID")
@@ -158,19 +163,49 @@ class HAEventHandler:
             )
         return HAStepResult.CONTINUE
 
+    def _reinvoke(self) -> None:
+        """Invoke this Lambda again with the same event and an incremented retry count."""
+        next_retry = self.retry_count + 1
+        payload = dict(self.event)
+        payload["ha_retry_count"] = next_retry
+        self.lambda_client.invoke(
+            FunctionName=self.context.function_name,
+            InvocationType="Event",
+            Payload=json.dumps(payload).encode("utf-8"),
+        )
+        logger.info(
+            "Re-invoked Lambda (retry %d of %d)",
+            next_retry,
+            MAX_HA_RETRIES,
+        )
+
     def login_step(self) -> HAStepResult:
-        # Because this is a newly created instance, it may take some time for the
-        # controller to be ready to accept logins.
-        while not self.deadline_exceeded():
+        while self.remaining_ms() > LOGIN_TIME_RESERVE * 1000:
             try:
                 self.client.login("admin", self.private_ip)
-                break
+                return HAStepResult.CONTINUE
             except Exception as err:
-                logger.exception(
-                    "Login failed due to %s: trying again in %s", err, WAIT_DELAY
+                logger.info(
+                    "Login failed: %s, retrying in %ds (%ds remaining)",
+                    err,
+                    WAIT_DELAY,
+                    self.remaining_ms() // 1000,
                 )
                 time.sleep(WAIT_DELAY)
-        return HAStepResult.CONTINUE
+
+        if self.retry_count >= MAX_HA_RETRIES:
+            raise AvxError(
+                f"Controller login failed after {self.retry_count + 1} attempts "
+                f"(~{(self.retry_count + 1) * 15} min total). "
+                f"Controller may not be booting correctly."
+            )
+
+        logger.info(
+            "Login not successful with %ds remaining, re-invoking Lambda",
+            self.remaining_ms() // 1000,
+        )
+        self._reinvoke()
+        return HAStepResult.REINVOKED
 
     def initial_setup_step(self) -> HAStepResult:
         logger.info("Running initial setup")
@@ -183,7 +218,7 @@ class HAEventHandler:
         Retries until deadline since initial_setup may still be completing.
         """
         logger.info("Creating temporary account for config restore")
-        while not self.deadline_exceeded():
+        while self.remaining_ms() > WAIT_DELAY * 1000:
             try:
                 response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
                 if response_json.get("return"):
@@ -262,23 +297,30 @@ class HAEventHandler:
             self.remove_temp_sg_rule_step,
             self.enable_open_sg_rules_step,
         ]
+        reinvoked = False
         try:
             for step in steps:
-                if self.deadline_exceeded():
+                if self.remaining_ms() <= 60_000:
                     raise AvxError("Deadline exceeded while handling HA event")
                 result = step()
+                if result == HAStepResult.REINVOKED:
+                    reinvoked = True
+                    return
                 if result == HAStepResult.FINISH:
                     return
         except Exception:
             raise
         finally:
-            for step in cleanup_steps:
-                try:
-                    step()
-                except Exception as err:
-                    logger.exception(
-                        "Error during cleanup step %s: %s", step.__name__, err
-                    )
+            if reinvoked:
+                logger.info("Skipping cleanup - next invocation will handle it")
+            else:
+                for step in cleanup_steps:
+                    try:
+                        step()
+                    except Exception as err:
+                        logger.exception(
+                            "Error during cleanup step %s: %s", step.__name__, err
+                        )
 
 
 def handle_ha_event(
@@ -286,6 +328,7 @@ def handle_ha_event(
     lambda_client: LambdaClient,
     controller_instanceobj: InstanceTypeDef,
     context: Any,
+    event: dict[str, Any] | None = None,
 ) -> None:
     """handle_ha_event() is called in response to the ASG creating a new controller instance.
 
@@ -294,5 +337,11 @@ def handle_ha_event(
     Care has to be taken for each step to be idempotent, so that if the function
     is interrupted, it can be safely re-run without causing problems.
     """
-    handler = HAEventHandler(ec2_client, lambda_client, context, controller_instanceobj)
+    handler = HAEventHandler(
+        ec2_client,
+        lambda_client,
+        context,
+        controller_instanceobj,
+        event=event or {},
+    )
     handler.run()

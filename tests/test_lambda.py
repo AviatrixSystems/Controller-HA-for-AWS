@@ -26,6 +26,8 @@ HA_TAG = "ha_ctrl"
 CONTEXT = argparse.Namespace()
 CONTEXT.function_name = HA_TAG + "-ha"
 CONTEXT.log_stream_name = "aviatrix_ha"
+# Simulate full 15-min Lambda window
+CONTEXT.get_remaining_time_in_millis = lambda: 900_000
 
 SG_NAME = "sg-test"
 
@@ -570,3 +572,69 @@ def test_lambda_function(event_data, monkeypatch):
     assert result["statusCode"] == 200
     assert result["body"] == "8.0.0-1000.1234"
     assert result["headers"]["Content-Type"] == "text/plain"
+
+
+def test_login_reinvokes_when_close_to_timeout(e2e_test_env, monkeypatch):
+    """When login can't succeed before the time reserve, the Lambda should
+    re-invoke itself with an incremented retry count instead of timing out."""
+    from aviatrix_ha.common.constants import LOGIN_TIME_RESERVE
+
+    aviatrix_ha._lambda_handler(
+        _cft_message("Create", e2e_test_env.lambda_arn), CONTEXT
+    )
+
+    e2e_test_env.ec2.terminate_instances(InstanceIds=[e2e_test_env.instance_id])
+    e2e_test_env.ec2.disassociate_address(PublicIp=e2e_test_env.eip["PublicIp"])
+    patch_instance_security_group(e2e_test_env.ec2, SG_NAME)
+
+    invocations = []
+
+    def mock_api_call_with_invoke(self, operation_name, kwarg):
+        if operation_name == "Invoke":
+            invocations.append(kwarg)
+            return {"StatusCode": 202}
+        return mock_make_api_call(self, operation_name, kwarg)
+
+    monkeypatch.setattr(
+        botocore.client.BaseClient, "_make_api_call", mock_api_call_with_invoke
+    )
+
+    low_context = argparse.Namespace()
+    low_context.function_name = CONTEXT.function_name
+    low_context.log_stream_name = CONTEXT.log_stream_name
+    low_context.invoked_function_arn = CONTEXT.invoked_function_arn
+    low_context.get_remaining_time_in_millis = lambda: (LOGIN_TIME_RESERVE - 1) * 1000
+
+    aviatrix_ha._lambda_handler(
+        _sns_message("autoscaling:EC2_INSTANCE_LAUNCH"), low_context
+    )
+
+    assert len(invocations) == 1
+    assert invocations[0]["InvocationType"] == "Event"
+    payload = json.loads(invocations[0]["Payload"])
+    assert payload["ha_retry_count"] == 1
+
+
+def test_login_fails_after_max_retries(e2e_test_env, monkeypatch):
+    """After MAX_HA_RETRIES, the Lambda should raise instead of re-invoking."""
+    from aviatrix_ha.common.constants import LOGIN_TIME_RESERVE, MAX_HA_RETRIES
+
+    aviatrix_ha._lambda_handler(
+        _cft_message("Create", e2e_test_env.lambda_arn), CONTEXT
+    )
+
+    e2e_test_env.ec2.terminate_instances(InstanceIds=[e2e_test_env.instance_id])
+    e2e_test_env.ec2.disassociate_address(PublicIp=e2e_test_env.eip["PublicIp"])
+    patch_instance_security_group(e2e_test_env.ec2, SG_NAME)
+
+    low_context = argparse.Namespace()
+    low_context.function_name = CONTEXT.function_name
+    low_context.log_stream_name = CONTEXT.log_stream_name
+    low_context.invoked_function_arn = CONTEXT.invoked_function_arn
+    low_context.get_remaining_time_in_millis = lambda: (LOGIN_TIME_RESERVE - 1) * 1000
+
+    event = _sns_message("autoscaling:EC2_INSTANCE_LAUNCH")
+    event["ha_retry_count"] = MAX_HA_RETRIES
+
+    with pytest.raises(AvxError, match="Controller login failed"):
+        aviatrix_ha._lambda_handler(event, low_context)
