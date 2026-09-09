@@ -88,10 +88,9 @@ def verify_backup_file(controller_instanceobj: InstanceTypeDef) -> tuple[bool, s
         retrieve_controller_version(version_file)
         s3_file = "CloudN_" + priv_ip + "_save_cloudx_config.enc"
         try:
-            with open("/tmp/tmp.enc", "wb") as data:
-                s3c.download_fileobj(
-                    os.environ.get("S3_BUCKET_BACK", ""), s3_file, data
-                )
+            # Just verify the existence instead of download backup file to avoid
+            # `[Errno 28] No space left on device`.
+            s3c.head_object(Bucket=os.environ.get("S3_BUCKET_BACK", ""), Key=s3_file)
         except botocore.exceptions.ClientError as err:
             if err.response["Error"]["Code"] == "404":
                 print("The object %s does not exist." % s3_file)
