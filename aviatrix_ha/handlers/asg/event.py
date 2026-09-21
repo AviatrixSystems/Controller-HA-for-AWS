@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Callable
 
 from types_boto3_ec2.client import EC2Client
 from types_boto3_ec2.type_defs import InstanceTypeDef
@@ -12,8 +12,9 @@ from types_boto3_lambda.client import LambdaClient
 from aviatrix_ha.api import client
 from aviatrix_ha.api.external.ip import get_public_ip
 from aviatrix_ha.common.constants import (
-    LOGIN_TIME_RESERVE,
+    CONTROLLER_API_TIME_RESERVE,
     MAX_HA_RETRIES,
+    RESTORE_TIME_RESERVE,
     TEMP_ACCOUNT_NAME,
     WAIT_DELAY,
 )
@@ -179,66 +180,121 @@ class HAEventHandler:
             MAX_HA_RETRIES,
         )
 
-    def login_step(self) -> HAStepResult:
-        while self.remaining_ms() > LOGIN_TIME_RESERVE * 1000:
+    def _retry_until_ready(
+        self,
+        attempt: Callable[[], bool],
+        description: str,
+        time_reserve: int,
+    ) -> HAStepResult:
+        """Retry `attempt` until it succeeds or the invocation runs low on time.
+
+        `attempt` returns True on success; returning False or raising triggers
+        a retry.
+
+        When the Lambda budget is exhausted we re-invoke the Lambda (up to
+        MAX_HA_RETRIES) so a slow controller boot or restart spans several
+        invocations instead of failing the whole HA event.
+        """
+        while self.remaining_ms() > time_reserve * 1000:
             try:
-                self.client.login("admin", self.private_ip)
-                return HAStepResult.CONTINUE
+                if attempt():
+                    return HAStepResult.CONTINUE
+                logger.warning(
+                    "%s not ready, retrying in %ds (%ds remaining)",
+                    description,
+                    WAIT_DELAY,
+                    self.remaining_ms() // 1000,
+                )
             except Exception as err:
-                logger.info(
-                    "Login failed: %s, retrying in %ds (%ds remaining)",
+                logger.warning(
+                    "%s failed: %s, retrying in %ds (%ds remaining)",
+                    description,
                     err,
                     WAIT_DELAY,
                     self.remaining_ms() // 1000,
                 )
-                time.sleep(WAIT_DELAY)
+            time.sleep(WAIT_DELAY)
 
         if self.retry_count >= MAX_HA_RETRIES:
             raise AvxError(
-                f"Controller login failed after {self.retry_count + 1} attempts "
+                f"{description} did not succeed after {self.retry_count + 1} attempts "
                 f"(~{(self.retry_count + 1) * 15} min total). "
                 f"Controller may not be booting correctly."
             )
 
         logger.info(
-            "Login not successful with %ds remaining, re-invoking Lambda",
+            "%s not successful with %ds remaining, re-invoking Lambda",
+            description,
             self.remaining_ms() // 1000,
         )
         self._reinvoke()
         return HAStepResult.REINVOKED
 
+    def login_step(self) -> HAStepResult:
+        def attempt() -> bool:
+            self.client.login("admin", self.private_ip)
+            return True
+
+        return self._retry_until_ready(
+            attempt,
+            description="Controller login",
+            time_reserve=CONTROLLER_API_TIME_RESERVE,
+        )
+
     def initial_setup_step(self) -> HAStepResult:
+        """Run initial setup.
+
+        Retries and re-invokes across Lambda budgets like login_step does.
+        """
         logger.info("Running initial setup")
-        self.client.initial_setup()
-        return HAStepResult.CONTINUE
+
+        def attempt() -> bool:
+            self.client.initial_setup()
+            return True
+
+        return self._retry_until_ready(
+            attempt,
+            description="Initial setup",
+            time_reserve=CONTROLLER_API_TIME_RESERVE,
+        )
 
     def create_temp_account_step(self) -> HAStepResult:
         """Create a temporary account needed for backup restore.
 
-        Retries until deadline since initial_setup may still be completing.
+        Retries and re-invokes across Lambda budgets like login_step does
         """
         logger.info("Creating temporary account for config restore")
-        while self.remaining_ms() > WAIT_DELAY * 1000:
-            try:
-                response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
-                if response_json.get("return"):
-                    logger.info("Successfully created temp account for restore")
-                    return HAStepResult.CONTINUE
-                logger.warning(
-                    "Create temp account returned failure: %s, retrying in %s",
-                    response_json,
-                    WAIT_DELAY,
+
+        def attempt() -> bool:
+            response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
+            if response_json.get("return"):
+                logger.info("Successfully created temp account for restore")
+                return True
+            reason = str(response_json.get("reason", "")).lower()
+            if "already exists" in reason:
+                # setup_account_profile rejects a name that is already taken, so
+                # an earlier invocation of this HA event created the account and
+                # there is nothing left to do.
+                logger.info(
+                    "Temp account %s already exists: %s", TEMP_ACCOUNT_NAME, reason
                 )
-            except Exception as err:
-                logger.warning(
-                    "Failed to create temp account due to %s: retrying in %s",
-                    err,
-                    WAIT_DELAY,
-                )
-            time.sleep(WAIT_DELAY)
-        raise AvxError("Deadline exceeded while creating temp account")
+                return True
+            logger.warning("Create temp account returned failure: %s", response_json)
+            return False
+
+        return self._retry_until_ready(
+            attempt,
+            description="Create temp account",
+            time_reserve=CONTROLLER_API_TIME_RESERVE,
+        )
 
     def restore_backup_step(self) -> HAStepResult:
+        """Restore the controller config from the backup in S3.
+
+        Restore is destructive and, past a certain point,
+        irreversible on that instance.
+        Re-invoke to allow enough lambda window to run restore.
+        """
         priv_ip = os.environ.get(
             "PRIV_IP"
         )  # This private IP belongs to older terminated instance
@@ -249,6 +305,22 @@ class HAEventHandler:
                 f"HA event failed. Backup file {s3_file} does not exist or is older"
                 f" than {MAXIMUM_BACKUP_AGE}"
             )
+
+        if self.remaining_ms() <= RESTORE_TIME_RESERVE * 1000:
+            if self.retry_count >= MAX_HA_RETRIES:
+                raise AvxError(
+                    f"Never had {RESTORE_TIME_RESERVE}s left to start the restore "
+                    f"in {self.retry_count + 1} attempts "
+                    f"(~{(self.retry_count + 1) * 15} min total). "
+                    f"The steps before the restore are taking too long."
+                )
+            logger.info(
+                "Only %ds left, less than the %ds a restore needs, re-invoking Lambda",
+                self.remaining_ms() // 1000,
+                RESTORE_TIME_RESERVE,
+            )
+            self._reinvoke()
+            return HAStepResult.REINVOKED
 
         response_json = self.client.restore_backup(s3_file, TEMP_ACCOUNT_NAME)
         if response_json.get("return", False) is not True:
@@ -308,8 +380,6 @@ class HAEventHandler:
                     return
                 if result == HAStepResult.FINISH:
                     return
-        except Exception:
-            raise
         finally:
             if reinvoked:
                 logger.info("Skipping cleanup - next invocation will handle it")
