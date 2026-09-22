@@ -1,8 +1,8 @@
 WAIT_DELAY = 30
 DEV_FLAG = "dev_flag"
 TEMP_ACCOUNT_NAME = "tempacc"
-# allow up to 3 re-invocations (~60 min total)
-MAX_HA_RETRIES = 3
+# allow 1 more re-invoke (~30 min total should be more than enough)
+MAX_HA_RETRIES = 1
 # Shared time reserve for the retried controller APIs
 # login / initial_setup / create_temp_account
 # Stop retrying and re-invoke the Lambda once less than this much
