@@ -9,6 +9,6 @@ MAX_HA_RETRIES = 3
 # time is left, so the next invocation gets a fresh lambda window.
 CONTROLLER_API_TIME_RESERVE = 180
 # A scale testbed restore take about 6min (QA), and the controller restore process
-# is destructive, past a certain point, irreversible.
+# is destructive, past a certain point, irreversible. Bump to 660sec for more buffer.
 # With less than this much time left, re-invoke and restore in a fresh window.
-RESTORE_TIME_RESERVE = 420
+RESTORE_TIME_RESERVE = 660
