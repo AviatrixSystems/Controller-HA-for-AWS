@@ -266,18 +266,16 @@ class HAEventHandler:
         logger.info("Creating temporary account for config restore")
 
         def attempt() -> bool:
+            if self.client.account_exists(TEMP_ACCOUNT_NAME):
+                # An earlier invocation of this HA event created it.
+                # setup_account_profile rejects a name that is already taken, so
+                # asking first is what keeps a re-invocation from retrying that
+                # rejection for the rest of its window.
+                logger.info("Temp account %s already exists", TEMP_ACCOUNT_NAME)
+                return True
             response_json = self.client.create_cloud_account(TEMP_ACCOUNT_NAME)
             if response_json.get("return"):
                 logger.info("Successfully created temp account for restore")
-                return True
-            reason = str(response_json.get("reason", "")).lower()
-            if "already exists" in reason:
-                # setup_account_profile rejects a name that is already taken, so
-                # an earlier invocation of this HA event created the account and
-                # there is nothing left to do.
-                logger.info(
-                    "Temp account %s already exists: %s", TEMP_ACCOUNT_NAME, reason
-                )
                 return True
             logger.warning("Create temp account returned failure: %s", response_json)
             return False
