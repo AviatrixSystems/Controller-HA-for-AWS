@@ -125,8 +125,24 @@ def respond_with_json(data: dict[str, Any]) -> wrappers.Response:
     return wrappers.Response(json.dumps(data), content_type="application/json")
 
 
+#: Account names the mock controller reports for list_accounts.
+EXISTING_ACCOUNTS: list[str] = []
+
+
 def v2_api_handler(request: wrappers.Request) -> wrappers.Response:
     print(request.json)
+    if request.json.get("action") == "list_accounts":
+        return respond_with_json(
+            {
+                "return": True,
+                "results": {
+                    "account_list": [
+                        {"account_name": name} for name in EXISTING_ACCOUNTS
+                    ]
+                },
+            }
+        )
+
     if request.json.get("action") == "login":
         if request.json.get("username") == "admin":
             return respond_with_json({"return": True, "CID": "mycid"})
@@ -577,7 +593,7 @@ def test_lambda_function(event_data, monkeypatch):
 def test_login_reinvokes_when_close_to_timeout(e2e_test_env, monkeypatch):
     """When login can't succeed before the time reserve, the Lambda should
     re-invoke itself with an incremented retry count instead of timing out."""
-    from aviatrix_ha.common.constants import LOGIN_TIME_RESERVE
+    from aviatrix_ha.common.constants import CONTROLLER_API_TIME_RESERVE
 
     aviatrix_ha._lambda_handler(
         _cft_message("Create", e2e_test_env.lambda_arn), CONTEXT
@@ -603,7 +619,7 @@ def test_login_reinvokes_when_close_to_timeout(e2e_test_env, monkeypatch):
     low_context.function_name = CONTEXT.function_name
     low_context.log_stream_name = CONTEXT.log_stream_name
     low_context.invoked_function_arn = CONTEXT.invoked_function_arn
-    low_context.get_remaining_time_in_millis = lambda: (LOGIN_TIME_RESERVE - 1) * 1000
+    low_context.get_remaining_time_in_millis = lambda: (CONTROLLER_API_TIME_RESERVE - 1) * 1000
 
     aviatrix_ha._lambda_handler(
         _sns_message("autoscaling:EC2_INSTANCE_LAUNCH"), low_context
@@ -617,7 +633,7 @@ def test_login_reinvokes_when_close_to_timeout(e2e_test_env, monkeypatch):
 
 def test_login_fails_after_max_retries(e2e_test_env, monkeypatch):
     """After MAX_HA_RETRIES, the Lambda should raise instead of re-invoking."""
-    from aviatrix_ha.common.constants import LOGIN_TIME_RESERVE, MAX_HA_RETRIES
+    from aviatrix_ha.common.constants import CONTROLLER_API_TIME_RESERVE, MAX_HA_RETRIES
 
     aviatrix_ha._lambda_handler(
         _cft_message("Create", e2e_test_env.lambda_arn), CONTEXT
@@ -631,10 +647,37 @@ def test_login_fails_after_max_retries(e2e_test_env, monkeypatch):
     low_context.function_name = CONTEXT.function_name
     low_context.log_stream_name = CONTEXT.log_stream_name
     low_context.invoked_function_arn = CONTEXT.invoked_function_arn
-    low_context.get_remaining_time_in_millis = lambda: (LOGIN_TIME_RESERVE - 1) * 1000
+    low_context.get_remaining_time_in_millis = lambda: (CONTROLLER_API_TIME_RESERVE - 1) * 1000
 
     event = _sns_message("autoscaling:EC2_INSTANCE_LAUNCH")
     event["ha_retry_count"] = MAX_HA_RETRIES
 
-    with pytest.raises(AvxError, match="Controller login failed"):
+    with pytest.raises(AvxError, match="Controller login did not succeed"):
         aviatrix_ha._lambda_handler(event, low_context)
+
+
+def test_temp_account_already_exists(e2e_test_env, monkeypatch):
+    """A re-invoked HA event finds tempacc from the previous invocation. It must
+    skip the creation, since the controller rejects a duplicate name, and go
+    straight to the restore."""
+    aviatrix_ha._lambda_handler(
+        _cft_message("Create", e2e_test_env.lambda_arn), CONTEXT
+    )
+
+    e2e_test_env.ec2.terminate_instances(InstanceIds=[e2e_test_env.instance_id])
+    e2e_test_env.ec2.disassociate_address(PublicIp=e2e_test_env.eip["PublicIp"])
+    patch_instance_security_group(e2e_test_env.ec2, SG_NAME)
+
+    def fail_if_called(*args, **kwargs):
+        pytest.fail("must not create an account that already exists")
+
+    monkeypatch.setattr(
+        aviatrix_ha.api.client.ApiClient, "create_cloud_account", fail_if_called
+    )
+    EXISTING_ACCOUNTS.append("tempacc")
+    try:
+        aviatrix_ha._lambda_handler(
+            _sns_message("autoscaling:EC2_INSTANCE_LAUNCH"), CONTEXT
+        )
+    finally:
+        EXISTING_ACCOUNTS.clear()

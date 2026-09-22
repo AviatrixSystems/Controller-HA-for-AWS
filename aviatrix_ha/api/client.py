@@ -110,8 +110,30 @@ class ApiClient:
             logger.info("Successfully initialized the controller")
             return
         raise AvxError(
-            "Could not setup the new controller: {response_json.get('reason')"
+            f"Could not setup the new controller: {response_json.get('reason')}"
         )
+
+    def list_accounts(self) -> dict[str, Any]:
+        data = {"CID": self.cid, "action": "list_accounts"}
+        try:
+            response = requests.post(self.endpoint, json=data, verify=False)
+            response.raise_for_status()
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.HTTPError,
+        ) as err:
+            logger.error(err)
+            return {"return": False, "reason": str(err)}
+        return response.json()
+
+    def account_exists(self, account_name: str) -> bool:
+        """Whether the controller already has an account with this name."""
+        response_json = self.list_accounts()
+        if not response_json.get("return"):
+            logger.warning("Could not list accounts: %s", response_json.get("reason"))
+            return False
+        accounts = response_json.get("results", {}).get("account_list", [])
+        return any(account.get("account_name") == account_name for account in accounts)
 
     def create_cloud_account(self, account_name: str) -> dict[str, Any]:
         aws_acc_num = _get_aws_account_number()
