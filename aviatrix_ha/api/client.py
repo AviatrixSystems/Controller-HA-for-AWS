@@ -1,9 +1,12 @@
 import os
 import logging
+import socket
 from typing import Any
 
 import boto3
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection
 
 from aviatrix_ha.errors.exceptions import AvxError
 
@@ -24,6 +27,27 @@ def _get_role(role: str, default: str) -> str:
     if len(name) == 0:
         return default
     return name
+
+
+class KeepaliveAdapter(HTTPAdapter):
+    """Turn on TCP keepalive for connections made through this adapter.
+
+    A synchronous request that stays silent longer than a network device's idle
+    timeout (350s on AWS NAT Gateways, Load Balancers, etc) gets dropped by that
+    device, and neither the response nor the close reaches the client.
+    Keepalive probes after 60s of silence keep the connection active.
+    """
+
+    SOCKET_OPTIONS = HTTPConnection.default_socket_options + [
+        (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),    # Enable keepalive
+        (socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60),  # Set idle time to 60 seconds
+        (socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 30), # Set interval between keepalive packets
+        (socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5),    # Set number of keepalive probes before connection is closed
+    ]
+
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+        kwargs["socket_options"] = self.SOCKET_OPTIONS
+        super().init_poolmanager(*args, **kwargs)
 
 
 class ApiClient:
@@ -175,7 +199,11 @@ class ApiClient:
         logger.info("Trying to restore config with data %s" % str(restore_data))
         restore_data["CID"] = self.cid
         try:
-            response = requests.post(self.endpoint, json=restore_data, verify=False)
+            # The controller sends nothing until the restore is done, which takes
+            # around 8min in scale testbed, so keep the silent connection alive.
+            with requests.Session() as s:
+                s.mount("https://", KeepaliveAdapter())
+                response = s.post(self.endpoint, json=restore_data, verify=False)
             response.raise_for_status()
         except (
             requests.exceptions.ConnectionError,
