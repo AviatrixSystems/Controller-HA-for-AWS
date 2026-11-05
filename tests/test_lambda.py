@@ -619,7 +619,9 @@ def test_login_reinvokes_when_close_to_timeout(e2e_test_env, monkeypatch):
     low_context.function_name = CONTEXT.function_name
     low_context.log_stream_name = CONTEXT.log_stream_name
     low_context.invoked_function_arn = CONTEXT.invoked_function_arn
-    low_context.get_remaining_time_in_millis = lambda: (CONTROLLER_API_TIME_RESERVE - 1) * 1000
+    low_context.get_remaining_time_in_millis = (
+        lambda: (CONTROLLER_API_TIME_RESERVE - 1) * 1000
+    )
 
     aviatrix_ha._lambda_handler(
         _sns_message("autoscaling:EC2_INSTANCE_LAUNCH"), low_context
@@ -647,7 +649,9 @@ def test_login_fails_after_max_retries(e2e_test_env, monkeypatch):
     low_context.function_name = CONTEXT.function_name
     low_context.log_stream_name = CONTEXT.log_stream_name
     low_context.invoked_function_arn = CONTEXT.invoked_function_arn
-    low_context.get_remaining_time_in_millis = lambda: (CONTROLLER_API_TIME_RESERVE - 1) * 1000
+    low_context.get_remaining_time_in_millis = (
+        lambda: (CONTROLLER_API_TIME_RESERVE - 1) * 1000
+    )
 
     event = _sns_message("autoscaling:EC2_INSTANCE_LAUNCH")
     event["ha_retry_count"] = MAX_HA_RETRIES
