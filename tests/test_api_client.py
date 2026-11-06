@@ -1,6 +1,7 @@
 """Test the API client."""
 
 import json
+import socket
 import ssl
 from typing import Any
 
@@ -77,3 +78,10 @@ def test_client(httpserver: HTTPServer):
     c.initial_setup()
     assert c.create_cloud_account("myaccount")["return"]
     assert c.restore_backup("mybackup", "myaccount")["return"]
+
+
+def test_keepalive_adapter_sets_socket_options():
+    adapter = client.KeepaliveAdapter()
+    options = adapter.poolmanager.connection_pool_kw["socket_options"]
+    assert (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) in options
+    assert (socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60) in options
